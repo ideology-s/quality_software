@@ -1,0 +1,7 @@
+<script setup>
+import PhoneFrame from './components/PhoneFrame.vue'
+</script>
+
+<template>
+  <PhoneFrame />
+</template>
