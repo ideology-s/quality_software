@@ -7,9 +7,13 @@ import {
   Plus,
   Wallet,
 } from '@element-plus/icons-vue'
+import { usePageNotice } from '../composables/usePageNotice'
 
 const isDialogOpen = ref(false)
 const editingLogId = ref(null)
+const formError = ref('')
+const selectedLogDate = ref('all')
+const { notice, showNotice } = usePageNotice()
 
 const logs = ref([
   {
@@ -94,6 +98,27 @@ const sortedLogs = computed(() =>
   [...logs.value].sort((a, b) => b.date.localeCompare(a.date)),
 )
 
+const filteredLogs = computed(() => {
+  if (selectedLogDate.value === 'all') {
+    return sortedLogs.value
+  }
+
+  return sortedLogs.value.filter((log) => log.date === selectedLogDate.value)
+})
+
+const logDateOptions = computed(() =>
+  sortedLogs.value.reduce((options, log) => {
+    if (!options.some((option) => option.value === log.date)) {
+      options.push({
+        value: log.date,
+        label: `${formatDate(log.date)} ${log.weekday}`,
+      })
+    }
+
+    return options
+  }, []),
+)
+
 function getDurationMinutes(start, end) {
   const [startHour, startMinute] = start.split(':').map(Number)
   const [endHour, endMinute] = end.split(':').map(Number)
@@ -118,6 +143,7 @@ function resetForm() {
   logForm.income = ''
   logForm.profit = ''
   logForm.note = ''
+  formError.value = ''
 }
 
 function openLogDialog() {
@@ -135,11 +161,13 @@ function openLogDetail(log) {
   logForm.income = String(log.income)
   logForm.profit = String(log.profit)
   logForm.note = log.note
+  formError.value = ''
   isDialogOpen.value = true
 }
 
 function saveLog() {
   if (!logForm.location.trim()) {
+    formError.value = '请填写出摊地点'
     return
   }
 
@@ -154,7 +182,9 @@ function saveLog() {
     note: logForm.note.trim() || '暂无备注',
   }
 
-  if (editingLogId.value) {
+  const isEditing = Boolean(editingLogId.value)
+
+  if (isEditing) {
     const index = logs.value.findIndex((log) => log.id === editingLogId.value)
 
     if (index !== -1) {
@@ -171,17 +201,27 @@ function saveLog() {
   }
 
   isDialogOpen.value = false
+  showNotice(isEditing ? '日志已保存' : '新日志已记录')
 }
 </script>
 
 <template>
   <section class="page-view stall-log-view">
+    <p
+      v-if="notice"
+      :class="['page-notice', `page-notice--${notice.tone}`]"
+      role="status"
+      aria-live="polite"
+    >
+      {{ notice.message }}
+    </p>
+
     <header class="page-header log-header">
       <div>
         <h1 class="page-title">出摊日志</h1>
         <p class="page-subtitle">记录每次出摊，复盘经营情况</p>
       </div>
-      <button class="log-add" type="button" @click="openLogDialog">
+      <button class="log-add" type="button" aria-label="新增出摊日志" @click="openLogDialog">
         <el-icon><Plus /></el-icon>
         <span>新增日志</span>
       </button>
@@ -223,18 +263,29 @@ function saveLog() {
     <section class="log-section">
       <div class="log-section__title">
         <h2>日志列表</h2>
-        <button type="button">全部日期⌄</button>
+        <label class="log-date-filter">
+          <span class="sr-only">按日期筛选日志</span>
+          <select v-model="selectedLogDate" aria-label="按日期筛选日志">
+            <option value="all">全部日期</option>
+            <option
+              v-for="option in logDateOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
       </div>
 
-      <div class="log-list">
-        <article
-          v-for="log in sortedLogs"
+      <div v-if="filteredLogs.length" class="log-list">
+        <button
+          v-for="log in filteredLogs"
           :key="log.id"
           class="log-card"
-          role="button"
-          tabindex="0"
+          type="button"
+          :aria-label="`查看 ${formatDate(log.date)} ${log.location} 的出摊日志`"
           @click="openLogDetail(log)"
-          @keydown.enter="openLogDetail(log)"
         >
           <div class="log-date">
             <strong>{{ formatDate(log.date) }}</strong>
@@ -258,7 +309,11 @@ function saveLog() {
             <p>备注：{{ log.note }}</p>
           </div>
           <span class="log-arrow">›</span>
-        </article>
+        </button>
+      </div>
+      <div v-else class="empty-state">
+        <strong>{{ sortedLogs.length ? '该日期没有日志' : '还没有出摊日志' }}</strong>
+        <p>{{ sortedLogs.length ? '切换到全部日期，查看已有出摊记录。' : '记录第一次出摊后，这里会显示收入、利润和复盘备注。' }}</p>
       </div>
     </section>
 
@@ -301,6 +356,7 @@ function saveLog() {
           />
         </el-form-item>
       </el-form>
+      <p v-if="formError" class="log-form-error" role="alert">{{ formError }}</p>
       <template #footer>
         <button class="log-dialog-button log-dialog-button--ghost" type="button" @click="isDialogOpen = false">
           取消
@@ -329,6 +385,8 @@ function saveLog() {
   display: grid;
   justify-items: center;
   gap: 5px;
+  min-width: 54px;
+  min-height: 54px;
   border: 0;
   background: transparent;
   color: var(--text-muted);
@@ -441,14 +499,33 @@ function saveLog() {
   font-size: 1.05rem;
 }
 
-.log-section__title button {
-  padding: 8px 12px;
+.log-date-filter {
+  position: relative;
+  display: inline-flex;
+}
+
+.log-date-filter::after {
+  content: "⌄";
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  color: #607894;
+  font-size: 0.72rem;
+  font-weight: 900;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.log-date-filter select {
+  min-height: 36px;
+  padding: 8px 28px 8px 12px;
   border: 1px solid rgba(105, 145, 198, 0.12);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.92);
   color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 800;
+  appearance: none;
 }
 
 .log-list {
@@ -461,13 +538,20 @@ function saveLog() {
   grid-template-columns: 68px minmax(0, 1fr) 14px;
   align-items: center;
   gap: 12px;
+  width: 100%;
   padding: 14px 12px;
   border: 1px solid rgba(105, 145, 198, 0.1);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 10px 24px rgba(66, 105, 153, 0.08);
   cursor: pointer;
+  color: inherit;
+  text-align: left;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.log-card:hover {
+  box-shadow: 0 8px 16px rgba(66, 105, 153, 0.08);
 }
 
 .log-card:active {
@@ -572,8 +656,16 @@ function saveLog() {
   gap: 10px;
 }
 
+.log-form-error {
+  margin: 0 0 8px;
+  color: #ef4444;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
 .log-dialog-button {
   min-width: 80px;
+  min-height: 44px;
   padding: 10px 14px;
   border: 0;
   border-radius: 13px;

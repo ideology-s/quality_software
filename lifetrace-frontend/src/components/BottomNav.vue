@@ -13,10 +13,10 @@ const route = useRoute()
 
 const navItems = [
   { label: '出摊日志', to: '/health', icon: Memo },
-  { label: '日程', to: '/schedule', icon: Calendar },
+  { label: '排队', to: '/queue', icon: User },
   { label: 'AI助手', to: '/ai', icon: ChatDotRound, center: true },
   { label: '商品', to: '/products', icon: ShoppingBag },
-  { label: '排队', to: '/queue', icon: User },
+  { label: '日程', to: '/schedule', icon: Calendar },
 ]
 
 const currentPath = computed(() => route.path)
@@ -28,6 +28,8 @@ const currentPath = computed(() => route.path)
       v-for="item in navItems"
       :key="item.to"
       :to="item.to"
+      :aria-label="item.label"
+      :aria-current="currentPath === item.to ? 'page' : undefined"
       :class="[
         'bottom-nav__item',
         { 'bottom-nav__item--active': currentPath === item.to },
@@ -78,6 +80,7 @@ const currentPath = computed(() => route.path)
   min-height: 54px;
   color: #7d8798;
   text-decoration: none;
+  border-radius: 16px;
   transition: color 0.2s ease, transform 0.2s ease;
 }
 
@@ -184,6 +187,27 @@ const currentPath = computed(() => route.path)
   .bottom-nav__center-button {
     width: 54px;
     height: 54px;
+  }
+}
+
+@media (max-width: 380px) {
+  .bottom-nav {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .bottom-nav__label {
+    font-size: 0.66rem;
+  }
+
+  .bottom-nav__center-button {
+    width: 50px;
+    height: 50px;
+  }
+
+  .bottom-nav__center-badge {
+    right: -6px;
+    font-size: 0.54rem;
   }
 }
 </style>

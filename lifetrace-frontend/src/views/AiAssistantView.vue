@@ -65,9 +65,10 @@ async function sendMessage() {
   <section class="page-view ai-view">
     <header class="ai-top">
       <h1>AI助手</h1>
+      <button class="ai-reset" type="button" @click="resetChat">新对话</button>
     </header>
 
-    <main ref="chatBodyRef" class="ai-chat">
+    <main ref="chatBodyRef" class="ai-chat" aria-live="polite">
       <article
         v-for="message in messages"
         :key="message.id"
@@ -94,7 +95,9 @@ async function sendMessage() {
     </main>
 
     <form class="ai-composer" @submit.prevent="sendMessage">
+      <label class="sr-only" for="ai-message-input">给 AI 助手发送消息</label>
       <input
+        id="ai-message-input"
         v-model="inputValue"
         autocomplete="off"
         placeholder="发消息或按住说话"
@@ -112,7 +115,7 @@ async function sendMessage() {
         <button class="composer-round" type="button" aria-label="添加">
           <el-icon><CirclePlus /></el-icon>
         </button>
-        <button class="composer-round" type="submit" aria-label="发送或语音">
+        <button class="composer-round" type="submit" aria-label="发送消息" :disabled="!inputValue.trim()">
           <el-icon><Microphone /></el-icon>
         </button>
       </div>
@@ -133,7 +136,10 @@ async function sendMessage() {
 }
 
 .ai-top {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
 }
 
 .ai-top h1 {
@@ -142,6 +148,19 @@ async function sendMessage() {
   font-size: 1.55rem;
   font-weight: 900;
   line-height: 1.1;
+}
+
+.ai-reset {
+  position: absolute;
+  right: 0;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid rgba(45, 115, 219, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 .ai-chat {
@@ -247,7 +266,7 @@ async function sendMessage() {
 }
 
 .ai-composer input::placeholder {
-  color: #b4beca;
+  color: #64748b;
 }
 
 .composer-tools {
@@ -262,6 +281,7 @@ async function sendMessage() {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-height: 34px;
   padding: 7px 10px;
   border: 1px solid rgba(45, 115, 219, 0.24);
   border-radius: 999px;
@@ -274,8 +294,8 @@ async function sendMessage() {
 
 .composer-round {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 1.6px solid #111827;
   border-radius: 50%;
@@ -300,12 +320,53 @@ async function sendMessage() {
   }
 
   .composer-tools {
+    grid-template-columns: auto auto 1fr 44px 44px;
     gap: 7px;
   }
 
   .composer-pill {
     padding: 6px 8px;
     font-size: 0.66rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .ai-reset {
+    padding: 6px 8px;
+    font-size: 0.68rem;
+  }
+
+  .ai-chat {
+    left: 18px;
+    right: 18px;
+  }
+
+  .ai-composer {
+    left: 8px;
+    right: 8px;
+    padding: 16px 14px 12px;
+    border-radius: 22px;
+  }
+
+  .composer-tools {
+    grid-template-columns: 1fr 1fr 44px 44px;
+  }
+
+  .composer-spacer {
+    display: none;
+  }
+
+  .composer-pill {
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .user-bubble {
+    max-width: 70%;
+  }
+
+  .assistant-bubble {
+    max-width: 82%;
   }
 }
 </style>

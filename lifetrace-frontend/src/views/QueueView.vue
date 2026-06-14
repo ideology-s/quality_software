@@ -1,5 +1,6 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import { usePageNotice } from '../composables/usePageNotice'
 
 const queueItems = ref([
   {
@@ -40,6 +41,7 @@ const actionItems = [
 
 const isDialogOpen = ref(false)
 const formError = ref('')
+const { notice, showNotice } = usePageNotice()
 const queueForm = reactive({
   customer: '',
   orderText: '',
@@ -104,15 +106,17 @@ function parseOrderText(orderText) {
 
 function submitNewTicket() {
   if (!queueForm.customer.trim() || !queueForm.orderText.trim()) {
-    formError.value = '请填写顾客姓名和商品单子'
+    formError.value = '请填写顾客姓名和商品内容'
     return
   }
 
   const parsedOrder = parseOrderText(queueForm.orderText)
   const shouldServeNow = !currentService.value
 
+  const newNumber = nextNumber.value
+
   queueItems.value.push({
-    number: nextNumber.value,
+    number: newNumber,
     customer: queueForm.customer.trim(),
     order: parsedOrder.order,
     quantity: parsedOrder.quantity,
@@ -122,13 +126,14 @@ function submitNewTicket() {
   })
 
   closeAddDialog()
+  showNotice(`${newNumber} 已取号${shouldServeNow ? '，已进入服务中' : '，已加入等待队列'}`)
 }
 
 function moveCurrentToEnd(status, tone) {
   const currentIndex = queueItems.value.findIndex((item) => item.tone === 'serving')
 
   if (currentIndex === -1) {
-    return
+    return null
   }
 
   const [currentItem] = queueItems.value.splice(currentIndex, 1)
@@ -137,6 +142,8 @@ function moveCurrentToEnd(status, tone) {
     status,
     tone,
   })
+
+  return currentItem
 }
 
 function callNext() {
@@ -149,6 +156,7 @@ function callNext() {
     : nextAfterCurrent
 
   if (nextIndex === -1) {
+    showNotice('当前没有等待中的号码', 'warning')
     return
   }
 
@@ -165,6 +173,20 @@ function callNext() {
     status: '服务中',
     tone: 'serving',
   }
+
+  showNotice(`已叫号 ${queueItems.value[nextIndex].number}`)
+}
+
+function isActionUnavailable(actionId) {
+  if (['complete', 'cancel'].includes(actionId)) {
+    return !currentService.value
+  }
+
+  if (actionId === 'next') {
+    return !queueItems.value.some((item) => item.tone === 'waiting')
+  }
+
+  return false
 }
 
 function handleAction(actionId) {
@@ -179,18 +201,37 @@ function handleAction(actionId) {
   }
 
   if (actionId === 'complete') {
-    moveCurrentToEnd('已完成', 'completed')
+    const completed = moveCurrentToEnd('已完成', 'completed')
+    if (!completed) {
+      showNotice('当前没有服务中的号码', 'warning')
+      return
+    }
+    showNotice(`${completed.number} 已完成`)
     return
   }
 
   if (actionId === 'cancel') {
-    moveCurrentToEnd('已取消', 'cancelled')
+    const cancelled = moveCurrentToEnd('已取消', 'cancelled')
+    if (!cancelled) {
+      showNotice('当前没有可取消的服务号码', 'warning')
+      return
+    }
+    showNotice(`${cancelled.number} 已取消`, 'warning')
   }
 }
 </script>
 
 <template>
   <section class="page-view queue-view">
+    <p
+      v-if="notice"
+      :class="['page-notice', `page-notice--${notice.tone}`]"
+      role="status"
+      aria-live="polite"
+    >
+      {{ notice.message }}
+    </p>
+
     <header class="page-header">
       <div>
         <h1 class="page-title">排队管理</h1>
@@ -218,8 +259,14 @@ function handleAction(actionId) {
         <button
           v-for="action in actionItems"
           :key="action.id"
-          :class="['queue-action', `queue-action--${action.tone}`]"
+          :class="[
+            'queue-action',
+            `queue-action--${action.tone}`,
+            { 'queue-action--unavailable': isActionUnavailable(action.id) },
+          ]"
           type="button"
+          :aria-label="action.label"
+          :aria-disabled="isActionUnavailable(action.id) ? 'true' : undefined"
           @click="handleAction(action.id)"
         >
           <span class="queue-action__icon">{{ action.icon }}</span>
@@ -227,7 +274,7 @@ function handleAction(actionId) {
         </button>
       </div>
 
-      <div class="queue-list">
+      <div v-if="queueItems.length" class="queue-list">
         <article
           v-for="item in queueItems"
           :key="item.number"
@@ -251,6 +298,10 @@ function handleAction(actionId) {
           </span>
         </article>
       </div>
+      <div v-else class="empty-state">
+        <strong>当前没有排队记录</strong>
+        <p>新增取号后，当前服务和等待队列会显示在这里。</p>
+      </div>
     </div>
 
     <div
@@ -267,7 +318,7 @@ function handleAction(actionId) {
             <span>自动取号</span>
             <strong>{{ nextNumber }}</strong>
           </div>
-          <button type="button" @click="closeAddDialog">×</button>
+          <button type="button" aria-label="关闭取号弹窗" @click="closeAddDialog">×</button>
         </div>
 
         <label class="queue-field">
@@ -280,7 +331,7 @@ function handleAction(actionId) {
         </label>
 
         <label class="queue-field">
-          <span>商品单子</span>
+          <span>商品内容</span>
           <input
             v-model="queueForm.orderText"
             autocomplete="off"
@@ -297,7 +348,7 @@ function handleAction(actionId) {
           >
         </label>
 
-        <p v-if="formError" class="queue-dialog__error">{{ formError }}</p>
+        <p v-if="formError" class="queue-dialog__error" role="alert">{{ formError }}</p>
 
         <button class="queue-dialog__submit" type="submit">确认取号</button>
       </form>
@@ -383,6 +434,7 @@ function handleAction(actionId) {
   display: grid;
   justify-items: center;
   gap: 7px;
+  min-height: 64px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -391,8 +443,8 @@ function handleAction(actionId) {
 
 .queue-action__icon {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 1px solid rgba(126, 165, 220, 0.18);
   border-radius: 14px;
@@ -423,6 +475,10 @@ function handleAction(actionId) {
 .queue-action--danger .queue-action__icon {
   background: linear-gradient(180deg, #fff3f3 0%, #ffe8e8 100%);
   color: #ef4444;
+}
+
+.queue-action--unavailable {
+  opacity: 0.56;
 }
 
 .queue-list {
@@ -619,8 +675,8 @@ function handleAction(actionId) {
 
 .queue-dialog__header button {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 0;
   border-radius: 999px;
@@ -666,6 +722,7 @@ function handleAction(actionId) {
 
 .queue-dialog__submit {
   width: 100%;
+  min-height: 44px;
   margin-top: 16px;
   padding: 12px;
   border: 0;
@@ -705,6 +762,44 @@ function handleAction(actionId) {
 
   .queue-action__label {
     font-size: 0.68rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .queue-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .queue-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    text-align: left;
+  }
+
+  .queue-summary__label {
+    margin-bottom: 0;
+  }
+
+  .queue-row {
+    grid-template-columns: 54px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .queue-row__number {
+    min-height: 54px;
+  }
+
+  .queue-row__status {
+    grid-column: 2;
+    justify-self: start;
+    min-width: 0;
+    margin-top: 4px;
+  }
+
+  .queue-row__line {
+    white-space: normal;
   }
 }
 </style>

@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-14T16:26:00+08:00",
+  "title": "Design System: LifeTrace",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "清爽出摊蓝",
+        "canonical": "#2d73db",
+        "tonalRamp": ["oklch(22% 0.08 255)", "oklch(34% 0.12 255)", "oklch(46% 0.16 255)", "oklch(58% 0.18 255)", "oklch(70% 0.13 255)", "oklch(82% 0.08 255)", "oklch(91% 0.04 255)", "oklch(96% 0.02 255)"]
+      },
+      "primary-soft": {
+        "role": "primary",
+        "displayName": "浅蓝提示底",
+        "canonical": "#e9f3ff",
+        "tonalRamp": ["oklch(26% 0.05 255)", "oklch(38% 0.06 255)", "oklch(50% 0.06 255)", "oklch(62% 0.05 255)", "oklch(74% 0.04 255)", "oklch(84% 0.035 255)", "oklch(92% 0.025 255)", "oklch(97% 0.015 255)"]
+      },
+      "screen-blue": {
+        "role": "neutral",
+        "displayName": "屏幕雾蓝",
+        "canonical": "#f4fbff",
+        "tonalRamp": ["oklch(24% 0.025 245)", "oklch(38% 0.025 245)", "oklch(52% 0.025 245)", "oklch(66% 0.022 245)", "oklch(78% 0.02 245)", "oklch(88% 0.018 245)", "oklch(94% 0.014 245)", "oklch(98% 0.01 245)"]
+      },
+      "text-main": {
+        "role": "neutral",
+        "displayName": "墨蓝正文",
+        "canonical": "#16324f",
+        "tonalRamp": ["oklch(18% 0.04 250)", "oklch(28% 0.05 250)", "oklch(38% 0.055 250)", "oklch(50% 0.05 250)", "oklch(62% 0.04 250)", "oklch(74% 0.03 250)", "oklch(86% 0.02 250)", "oklch(95% 0.01 250)"]
+      },
+      "success": {
+        "role": "semantic",
+        "displayName": "完成绿",
+        "canonical": "#16a46b",
+        "tonalRamp": ["oklch(22% 0.08 155)", "oklch(34% 0.1 155)", "oklch(46% 0.12 155)", "oklch(58% 0.13 155)", "oklch(70% 0.1 155)", "oklch(82% 0.07 155)", "oklch(91% 0.04 155)", "oklch(96% 0.02 155)"]
+      },
+      "warning": {
+        "role": "semantic",
+        "displayName": "提醒橙",
+        "canonical": "#f07c22",
+        "tonalRamp": ["oklch(24% 0.08 55)", "oklch(36% 0.11 55)", "oklch(48% 0.14 55)", "oklch(62% 0.16 55)", "oklch(74% 0.12 55)", "oklch(84% 0.08 55)", "oklch(92% 0.045 55)", "oklch(97% 0.02 55)"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "页面大标题",
+        "purpose": "只用于移动端页面主标题。"
+      },
+      "body": {
+        "displayName": "移动端正文",
+        "purpose": "用于中文移动端界面文案、AI 回复、备注和说明。"
+      },
+      "label": {
+        "displayName": "经营信息标签",
+        "purpose": "用于元信息、状态、表单标签和紧凑导航文字。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "soft-card-lift",
+        "value": "0 16px 36px rgba(71, 119, 183, 0.12)",
+        "purpose": "重要容器的共享卡片阴影。"
+      },
+      {
+        "name": "compact-control-lift",
+        "value": "0 10px 24px rgba(71, 119, 183, 0.12)",
+        "purpose": "添加按钮、商品卡片和紧凑控件使用。"
+      },
+      {
+        "name": "modal-lift",
+        "value": "0 24px 60px rgba(18, 30, 52, 0.22)",
+        "purpose": "只用于手机框架内的弹窗。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-quick",
+        "value": "150ms ease",
+        "purpose": "用于点击、聚焦和悬停的快速反馈。"
+      },
+      {
+        "name": "state-standard",
+        "value": "200ms ease",
+        "purpose": "用于颜色、位移和阴影反馈的默认过渡。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone-narrow",
+        "value": "420px"
+      },
+      {
+        "name": "phone-shell",
+        "value": "540px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "主按钮",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "移动端弹窗里的主要确认或保存操作。",
+      "html": "<button class=\"ds-btn-primary\">确认添加</button>",
+      "css": ".ds-btn-primary { border: 0; border-radius: 15px; background: linear-gradient(135deg, #6fbaff 0%, #2d73db 100%); color: #fff; padding: 12px 18px; font: 800 0.9rem/1.2 \"SF Pro Display\", \"Segoe UI\", \"PingFang SC\", sans-serif; box-shadow: 0 12px 24px rgba(45, 115, 219, 0.22); transition: transform 0.2s ease, box-shadow 0.2s ease; } .ds-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 14px 26px rgba(45, 115, 219, 0.26); } .ds-btn-primary:focus-visible { outline: 3px solid rgba(45, 115, 219, 0.28); outline-offset: 3px; }"
+    },
+    {
+      "name": "柔和标签",
+      "kind": "chip",
+      "refersTo": "button-soft",
+      "description": "用于 AI 或筛选操作的紧凑浅蓝标签。",
+      "html": "<button class=\"ds-chip\">深度思考</button>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(45, 115, 219, 0.24); border-radius: 999px; background: #eef5ff; color: #2d73db; padding: 7px 10px; font: 900 0.7rem/1.1 \"SF Pro Display\", \"Segoe UI\", \"PingFang SC\", sans-serif; white-space: nowrap; transition: background 0.18s ease, border-color 0.18s ease; } .ds-chip:hover { background: #e9f3ff; border-color: rgba(45, 115, 219, 0.4); } .ds-chip:focus-visible { outline: 3px solid rgba(45, 115, 219, 0.22); outline-offset: 2px; }"
+    },
+    {
+      "name": "页面卡片",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "用于摘要、表单和列表面板的主要移动端容器。",
+      "html": "<article class=\"ds-card\"><h3>本周概览</h3><p>记录每次出摊，复盘经营情况</p></article>",
+      "css": ".ds-card { width: 280px; border: 1px solid rgba(126, 165, 220, 0.18); border-radius: 28px; background: rgba(255, 255, 255, 0.94); color: #16324f; padding: 20px; box-shadow: 0 16px 36px rgba(71, 119, 183, 0.12); font-family: \"SF Pro Display\", \"Segoe UI\", \"PingFang SC\", sans-serif; } .ds-card h3 { margin: 0 0 10px; color: #11253d; font-size: 0.95rem; line-height: 1.25; } .ds-card p { margin: 0; color: #6c86a4; font-size: 0.9rem; line-height: 1.6; }"
+    },
+    {
+      "name": "文本输入框",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "用于日志、日程、商品信息和排队取号的带标签移动端表单字段。",
+      "html": "<label class=\"ds-field\"><span>商品名</span><input placeholder=\"例如：手工钥匙扣\"></label>",
+      "css": ".ds-field { display: grid; gap: 8px; color: #16324f; font-family: \"SF Pro Display\", \"Segoe UI\", \"PingFang SC\", sans-serif; } .ds-field span { font-size: 0.72rem; font-weight: 800; color: #6c86a4; } .ds-field input { width: 100%; border: 1px solid rgba(126, 165, 220, 0.2); border-radius: 14px; background: #f8fbff; color: #16324f; padding: 12px 14px; font: 700 0.9rem/1.2 inherit; } .ds-field input::placeholder { color: #64748b; } .ds-field input:focus { outline: 0; border-color: rgba(45, 115, 219, 0.45); box-shadow: 0 0 0 3px rgba(45, 115, 219, 0.08); }"
+    },
+    {
+      "name": "底部导航 AI 激活项",
+      "kind": "nav",
+      "refersTo": "nav-active",
+      "description": "五项底部导航中凸起的 AI 中心操作。",
+      "html": "<a class=\"ds-nav-ai\" href=\"#\"><span class=\"ds-nav-ai__spark\">✦</span><strong>AI</strong><span>助手</span></a>",
+      "css": ".ds-nav-ai { position: relative; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 999px; border-bottom-left-radius: 14px; background: linear-gradient(135deg, #7dd8ff 0%, #41a3f4 100%); color: #fff; text-decoration: none; box-shadow: 0 8px 20px rgba(65, 163, 244, 0.28); font-family: \"SF Pro Display\", \"Segoe UI\", \"PingFang SC\", sans-serif; transition: transform 0.2s ease, box-shadow 0.2s ease; } .ds-nav-ai:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(47, 142, 240, 0.32); } .ds-nav-ai:focus-visible { outline: 3px solid rgba(45, 115, 219, 0.28); outline-offset: 4px; } .ds-nav-ai strong { font-size: 1rem; line-height: 1; } .ds-nav-ai span:last-child { position: absolute; top: -3px; right: -11px; padding: 2px 6px; border: 1.5px solid #fff; border-radius: 999px 999px 999px 4px; background: linear-gradient(135deg, #a789ff 0%, #7d55ea 100%); font-size: 0.58rem; font-weight: 700; } .ds-nav-ai__spark { position: absolute; top: 8px; left: 10px; font-size: 0.62rem; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "校园摊主的口袋控制台",
+    "overview": "LifeTrace 应该像学生手里的一个小型经营控制台：在不理想的环境里也能快速看清，在校园生活里足够亲切，同时又能把出摊、库存、日程、排队这些容易乱掉的事情组织起来。当前视觉系统是一个浅色移动端外壳，使用柔和蓝色背景、白色卡片、紧凑摘要和清晰中文标签。\n\n产品性格是轻量、温暖、清晰。因此视觉应该克制用色、使用熟悉的移动端控件、保证足够大的点击区域，并用直接的中文标签降低理解成本。它明确拒绝企业后台密度、冷冰冰的财务软件、ERP 风格和表格化管理界面。",
+    "keyCharacteristics": [
+      "移动端优先：手机框架、底部导航、短任务流程。",
+      "柔和蓝色主操作，搭配白色和极浅蓝工作面。",
+      "卡片和输入框有圆角，但必须保留足够结构感，不能糊成一团。",
+      "状态颜色必须搭配 `库存不足`、`已完成`、`服务中` 这样的文字。",
+      "使用适合中文移动端 UI 的系统无衬线字体，不做装饰性品牌字体。"
+    ],
+    "rules": [
+      {
+        "name": "蓝色只做事规则",
+        "body": "主蓝色只用于操作、选中和聚焦状态；不要把它到处撒成装饰。",
+        "section": "colors"
+      },
+      {
+        "name": "状态必须有文字规则",
+        "body": "绿色、橙色、红色和紫色必须搭配文字标签或图标。禁止只靠颜色表达状态含义。",
+        "section": "colors"
+      },
+      {
+        "name": "原生工具规则",
+        "body": "整个产品使用一套系统无衬线字体。核心 UI 禁止引入展示字体、衬线品牌字体或等宽字体风格。",
+        "section": "typography"
+      },
+      {
+        "name": "关键文字不能太小规则",
+        "body": "用户需要据此行动的说明、状态和错误信息，必须具备可读字号和足够对比度；小标签只用于辅助元信息。",
+        "section": "typography"
+      },
+      {
+        "name": "忙碌手指规则",
+        "body": "阴影应该帮助用户判断什么可点、什么在浮动。只是好看的阴影应该删掉。",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do 保持移动端优先：大点击区域、短标签、稳定底部导航和可滚动任务页面。",
+      "Do 使用清爽出摊蓝表达主操作、当前选中和聚焦状态。",
+      "Do 每个状态颜色都搭配 `库存不足`、`已完成`、`服务中`、`已取消` 等文字。",
+      "Do 保持表单短、直接、友好，适合忙碌出摊场景。",
+      "Do 保证正文、占位符和状态标签达到 WCAG AA 对比度目标。"
+    ],
+    "donts": [
+      "Don't 让 LifeTrace 看起来像企业后台、ERP 系统、正式进销存平台，或冷冰冰的财务/会计软件。",
+      "Don't 把页面做成密集桌面仪表盘、表格化财务界面或配置很多的管理后台。",
+      "Don't 使用复杂动画、页面加载编排，或任何拖慢任务完成的动效。",
+      "Don't 只依赖颜色表达状态、警告、错误或排队状态。",
+      "Don't 引入装饰性渐变文字、卡片侧边色条、玻璃拟态或营销页式超大标题。"
+    ]
+  }
+}

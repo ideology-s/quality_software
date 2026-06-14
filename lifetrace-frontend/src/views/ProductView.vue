@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
+import { usePageNotice } from '../composables/usePageNotice'
 
 const products = ref([
   {
@@ -41,6 +42,8 @@ const products = ref([
 const isDialogOpen = ref(false)
 const editingId = ref(null)
 const formError = ref('')
+const confirmDelete = ref(false)
+const { notice, showNotice } = usePageNotice()
 
 const productForm = reactive({
   name: '',
@@ -90,6 +93,7 @@ function resetForm() {
   productForm.cost = ''
   productForm.image = ''
   formError.value = ''
+  confirmDelete.value = false
 }
 
 function openAddDialog() {
@@ -106,12 +110,14 @@ function openEditDialog(product) {
   productForm.cost = String(product.cost)
   productForm.image = product.image
   formError.value = ''
+  confirmDelete.value = false
   isDialogOpen.value = true
 }
 
 function closeDialog() {
   isDialogOpen.value = false
   formError.value = ''
+  confirmDelete.value = false
 }
 
 function handleImageUpload(event) {
@@ -151,7 +157,9 @@ function submitProduct() {
     image: productForm.image,
   }
 
-  if (editingId.value) {
+  const isEditing = Boolean(editingId.value)
+
+  if (isEditing) {
     const index = products.value.findIndex((product) => product.id === editingId.value)
 
     if (index !== -1) {
@@ -171,6 +179,7 @@ function submitProduct() {
   }
 
   closeDialog()
+  showNotice(isEditing ? '商品信息已保存' : '新商品已添加')
 }
 
 function deleteProduct() {
@@ -178,19 +187,36 @@ function deleteProduct() {
     return
   }
 
+  if (!confirmDelete.value) {
+    confirmDelete.value = true
+    formError.value = '再次点击删除，确认移除这个商品'
+    return
+  }
+
+  const deletedName = productForm.name
   products.value = products.value.filter((product) => product.id !== editingId.value)
   closeDialog()
+  showNotice(`已删除「${deletedName}」`)
 }
 </script>
 
 <template>
   <section class="page-view products-view">
+    <p
+      v-if="notice"
+      :class="['page-notice', `page-notice--${notice.tone}`]"
+      role="status"
+      aria-live="polite"
+    >
+      {{ notice.message }}
+    </p>
+
     <header class="page-header products-header">
       <div>
         <h1 class="page-title">商品管理</h1>
         <p class="page-subtitle">今日经营概览</p>
       </div>
-      <button class="add-product" type="button" @click="openAddDialog">
+      <button class="add-product" type="button" aria-label="添加商品" @click="openAddDialog">
         <el-icon><Plus /></el-icon>
         <span>添加商品</span>
       </button>
@@ -215,15 +241,14 @@ function deleteProduct() {
       <span>共 {{ products.length }} 件商品</span>
     </div>
 
-    <div class="product-list">
-      <article
+    <div v-if="products.length" class="product-list">
+      <button
         v-for="product in products"
         :key="product.id"
         class="product-card"
-        role="button"
-        tabindex="0"
+        type="button"
+        :aria-label="`编辑商品 ${product.name}，库存 ${product.stock}`"
         @click="openEditDialog(product)"
-        @keydown.enter="openEditDialog(product)"
       >
         <div :class="['product-card__cover', `product-card__cover--${product.theme}`]">
           <img
@@ -261,7 +286,11 @@ function deleteProduct() {
             </div>
           </div>
         </div>
-      </article>
+      </button>
+    </div>
+    <div v-else class="empty-state">
+      <strong>还没有商品</strong>
+      <p>先添加正在售卖的商品，库存和利润会在这里汇总。</p>
     </div>
 
     <Teleport to=".phone-screen">
@@ -279,7 +308,7 @@ function deleteProduct() {
               <span>{{ editingId ? '编辑库存信息' : '录入新商品' }}</span>
               <strong>{{ dialogTitle }}</strong>
             </div>
-            <button type="button" @click="closeDialog">×</button>
+            <button type="button" aria-label="关闭商品弹窗" @click="closeDialog">×</button>
           </div>
 
           <label class="product-field">
@@ -335,7 +364,7 @@ function deleteProduct() {
             >
           </label>
 
-          <p v-if="formError" class="product-modal__error">{{ formError }}</p>
+          <p v-if="formError" class="product-modal__error" role="alert">{{ formError }}</p>
 
           <div :class="['product-modal__actions', { 'product-modal__actions--edit': editingId }]">
             <button
@@ -344,7 +373,7 @@ function deleteProduct() {
               type="button"
               @click="deleteProduct"
             >
-              删除商品
+              {{ confirmDelete ? '确认删除' : '删除商品' }}
             </button>
             <button class="product-modal__submit" type="submit">
               {{ editingId ? '保存修改' : '确认添加' }}
@@ -373,6 +402,7 @@ function deleteProduct() {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 44px;
   padding: 10px 12px;
   border: 1px solid rgba(87, 145, 230, 0.18);
   border-radius: 14px;
@@ -466,13 +496,20 @@ function deleteProduct() {
   display: grid;
   grid-template-columns: 86px minmax(0, 1fr);
   gap: 14px;
+  width: 100%;
   padding: 12px;
   border: 1px solid rgba(105, 145, 198, 0.1);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 10px 24px rgba(66, 105, 153, 0.08);
   cursor: pointer;
+  color: inherit;
+  text-align: left;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.product-card:hover {
+  box-shadow: 0 8px 16px rgba(66, 105, 153, 0.08);
 }
 
 .product-card:active {
@@ -618,7 +655,7 @@ function deleteProduct() {
 :global(.product-modal) {
   position: absolute;
   inset: 0;
-  z-index: 9999;
+  z-index: 20;
   display: grid;
   place-items: center;
   padding: 22px;
@@ -658,8 +695,8 @@ function deleteProduct() {
 
 :global(.product-modal__header button) {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 0;
   border-radius: 999px;
@@ -749,6 +786,7 @@ function deleteProduct() {
 
 :global(.product-modal__delete) {
   width: 100%;
+  min-height: 44px;
   padding: 12px;
   border: 0;
   border-radius: 15px;
@@ -760,6 +798,7 @@ function deleteProduct() {
 
 :global(.product-modal__submit) {
   width: 100%;
+  min-height: 44px;
   padding: 12px;
   border: 0;
   border-radius: 15px;
@@ -792,6 +831,54 @@ function deleteProduct() {
 
   .product-metrics {
     gap: 6px;
+  }
+}
+
+@media (max-width: 380px) {
+  .product-stats {
+    padding: 16px;
+  }
+
+  .product-stat {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  .product-stat + .product-stat {
+    padding-left: 12px;
+  }
+
+  .product-stat__icon {
+    width: 40px;
+    height: 40px;
+    font-size: 1.05rem;
+  }
+
+  .product-stat strong {
+    font-size: 1.32rem;
+  }
+
+  .product-card {
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .product-card__cover {
+    height: 72px;
+  }
+
+  .product-card__cover span {
+    width: 56px;
+    height: 56px;
+  }
+
+  .product-card__top {
+    margin-bottom: 12px;
+  }
+
+  .product-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 8px;
   }
 }
 </style>
