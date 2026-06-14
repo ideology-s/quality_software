@@ -1,15 +1,12 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { Lock, Plus, SwitchButton } from '@element-plus/icons-vue'
+import { useAuth } from '../composables/useAuth'
+import { usePageNotice } from '../composables/usePageNotice'
 
-const taskOptions = [
-  '上课',
-  '进货采购',
-  '晚间出摊',
-  '整理库存',
-  '回复客户消息',
-  '准备明日货品',
-]
+const router = useRouter()
+const { currentUser, logout, updateProfile } = useAuth()
 
 const schedules = ref([
   { id: 1, date: '2026-05-24', start: '08:30', end: '10:00', task: '上课', status: '待办' },
@@ -21,8 +18,14 @@ const schedules = ref([
 ])
 
 const isDialogOpen = ref(false)
+const isProfileDialogOpen = ref(false)
+const isPasswordDialogOpen = ref(false)
 const editingId = ref(null)
 const formError = ref('')
+const profileError = ref('')
+const passwordError = ref('')
+const confirmDelete = ref(false)
+const { notice, showNotice } = usePageNotice()
 
 const scheduleForm = reactive({
   date: '',
@@ -32,19 +35,25 @@ const scheduleForm = reactive({
   status: '待办',
 })
 
+const passwordForm = reactive({
+  current: '',
+  next: '',
+  confirm: '',
+})
+
+const profileForm = reactive({
+  nickname: '',
+  account: '',
+  avatarUrl: '',
+})
+
 const sortedSchedules = computed(() =>
   [...schedules.value].sort((a, b) => `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`)),
 )
 
-const pendingCount = computed(() =>
-  schedules.value.filter((item) => item.status !== '已完成').length,
-)
-
-const completedCount = computed(() =>
-  schedules.value.filter((item) => item.status === '已完成').length,
-)
-
 const dialogTitle = computed(() => (editingId.value ? '编辑日程' : '添加日程'))
+const avatarText = computed(() => currentUser.value.nickname.slice(0, 1).toUpperCase())
+const profileAvatarText = computed(() => profileForm.nickname.slice(0, 1).toUpperCase() || 'U')
 
 function getStatusTone(status) {
   const statusMap = {
@@ -65,9 +74,10 @@ function resetForm() {
   scheduleForm.date = '2026-05-24'
   scheduleForm.start = '09:00'
   scheduleForm.end = '10:00'
-  scheduleForm.task = taskOptions[0]
+  scheduleForm.task = ''
   scheduleForm.status = '待办'
   formError.value = ''
+  confirmDelete.value = false
 }
 
 function openAddDialog() {
@@ -84,17 +94,119 @@ function openEditDialog(schedule) {
   scheduleForm.task = schedule.task
   scheduleForm.status = schedule.status
   formError.value = ''
+  confirmDelete.value = false
   isDialogOpen.value = true
 }
 
 function closeDialog() {
   isDialogOpen.value = false
   formError.value = ''
+  confirmDelete.value = false
+}
+
+function resetProfileForm() {
+  profileForm.nickname = currentUser.value.nickname
+  profileForm.account = currentUser.value.account
+  profileForm.avatarUrl = currentUser.value.avatarUrl || ''
+  profileError.value = ''
+}
+
+function openProfileDialog() {
+  resetProfileForm()
+  isProfileDialogOpen.value = true
+}
+
+function closeProfileDialog() {
+  isProfileDialogOpen.value = false
+  resetProfileForm()
+}
+
+function handleAvatarFile(event) {
+  const [file] = event.target.files
+
+  if (!file) {
+    return
+  }
+
+  if (!file.type.startsWith('image/')) {
+    profileError.value = '请选择图片作为头像'
+    return
+  }
+
+  const reader = new FileReader()
+  reader.addEventListener('load', () => {
+    profileForm.avatarUrl = String(reader.result)
+    profileError.value = ''
+  })
+  reader.readAsDataURL(file)
+}
+
+function clearAvatar() {
+  profileForm.avatarUrl = ''
+}
+
+function submitProfile() {
+  const result = updateProfile(profileForm)
+
+  if (!result.ok) {
+    profileError.value = result.message
+    return
+  }
+
+  closeProfileDialog()
+  showNotice('个人资料已保存')
+}
+
+function resetPasswordForm() {
+  passwordForm.current = ''
+  passwordForm.next = ''
+  passwordForm.confirm = ''
+  passwordError.value = ''
+}
+
+function openPasswordDialog() {
+  resetPasswordForm()
+  isPasswordDialogOpen.value = true
+}
+
+function closePasswordDialog() {
+  isPasswordDialogOpen.value = false
+  resetPasswordForm()
+}
+
+function submitPassword() {
+  if (!passwordForm.current || !passwordForm.next || !passwordForm.confirm) {
+    passwordError.value = '请完整填写当前密码和新密码'
+    return
+  }
+
+  if (passwordForm.next.length < 6) {
+    passwordError.value = '新密码至少需要 6 位'
+    return
+  }
+
+  if (passwordForm.next !== passwordForm.confirm) {
+    passwordError.value = '两次输入的新密码不一致'
+    return
+  }
+
+  closePasswordDialog()
+  showNotice('密码已更新')
+}
+
+function handleLogout() {
+  logout()
+  router.replace({
+    path: '/login',
+    query: {
+      loggedOut: '1',
+    },
+  })
 }
 
 function submitSchedule() {
-  if (!scheduleForm.date || !scheduleForm.start || !scheduleForm.end || !scheduleForm.task) {
-    formError.value = '请完整选择日期、时间和任务'
+  if (!scheduleForm.date || !scheduleForm.start || !scheduleForm.end || !scheduleForm.task.trim()) {
+    formError.value = '请完整填写日期、时间和任务'
     return
   }
 
@@ -107,11 +219,13 @@ function submitSchedule() {
     date: scheduleForm.date,
     start: scheduleForm.start,
     end: scheduleForm.end,
-    task: scheduleForm.task,
+    task: scheduleForm.task.trim(),
     status: scheduleForm.status,
   }
 
-  if (editingId.value) {
+  const isEditing = Boolean(editingId.value)
+
+  if (isEditing) {
     const index = schedules.value.findIndex((item) => item.id === editingId.value)
 
     if (index !== -1) {
@@ -128,6 +242,7 @@ function submitSchedule() {
   }
 
   closeDialog()
+  showNotice(isEditing ? '日程已保存' : '新日程已添加')
 }
 
 function deleteSchedule() {
@@ -135,48 +250,139 @@ function deleteSchedule() {
     return
   }
 
+  if (!confirmDelete.value) {
+    confirmDelete.value = true
+    formError.value = '再次点击删除，确认移除这条日程'
+    return
+  }
+
+  const deletedTask = scheduleForm.task
   schedules.value = schedules.value.filter((item) => item.id !== editingId.value)
   closeDialog()
+  showNotice(`已删除「${deletedTask}」`)
 }
 </script>
 
 <template>
   <section class="page-view schedule-view">
+    <p
+      v-if="notice"
+      :class="['page-notice', `page-notice--${notice.tone}`]"
+      role="status"
+      aria-live="polite"
+    >
+      {{ notice.message }}
+    </p>
+
     <header class="page-header schedule-header">
       <div>
         <h1 class="page-title">日程清单</h1>
         <p class="page-subtitle">记录每日安排</p>
       </div>
-      <button class="schedule-add" type="button" @click="openAddDialog">
-        <el-icon><Plus /></el-icon>
-      </button>
     </header>
 
-    <div class="page-card schedule-summary">
-      <div class="schedule-summary__item">
-        <span class="schedule-summary__icon">▣</span>
-        <div>
-          <p>待完成</p>
-          <strong>{{ pendingCount }}<small>项</small></strong>
+    <div class="page-card profile-card">
+      <button
+        class="profile-card__identity profile-card__identity--button"
+        type="button"
+        aria-label="查看和编辑个人资料"
+        @click="openProfileDialog"
+      >
+        <span class="profile-card__avatar" aria-hidden="true">
+          <img v-if="currentUser.avatarUrl" :src="currentUser.avatarUrl" alt="">
+          <span v-else>{{ avatarText }}</span>
+        </span>
+        <div class="profile-card__person">
+          <strong>{{ currentUser.nickname }}</strong>
+          <span>校园摊主 · 今日 {{ sortedSchedules.length }} 项安排</span>
         </div>
+      </button>
+      <div class="profile-card__actions" aria-label="账号操作">
+        <button class="profile-card__action" type="button" @click="openPasswordDialog">
+          <el-icon><Lock /></el-icon>
+          <span>修改密码</span>
+        </button>
+        <button class="profile-card__action profile-card__action--danger" type="button" @click="handleLogout">
+          <el-icon><SwitchButton /></el-icon>
+          <span>退出登录</span>
+        </button>
       </div>
-      <div class="schedule-summary__item">
-        <span class="schedule-summary__icon schedule-summary__icon--done">✓</span>
-        <div>
-          <p>已完成</p>
-          <strong>{{ completedCount }}<small>项</small></strong>
-        </div>
-      </div>
-      <span class="schedule-summary__pill">安排适中</span>
     </div>
+
+    <Teleport to=".phone-screen">
+      <div
+        v-if="isProfileDialogOpen"
+        class="profile-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="个人资料"
+        @click.self="closeProfileDialog"
+      >
+        <form class="profile-modal__card" @submit.prevent="submitProfile">
+          <div class="profile-modal__header">
+            <div>
+              <span>个人中心</span>
+              <strong>个人资料</strong>
+            </div>
+            <button type="button" aria-label="关闭个人资料弹窗" @click="closeProfileDialog">×</button>
+          </div>
+
+          <label class="profile-avatar-picker">
+            <span class="profile-avatar-picker__preview" aria-hidden="true">
+              <img v-if="profileForm.avatarUrl" :src="profileForm.avatarUrl" alt="">
+              <span v-else>{{ profileAvatarText }}</span>
+            </span>
+            <span class="profile-avatar-picker__text">上传头像</span>
+            <input type="file" accept="image/*" @change="handleAvatarFile">
+          </label>
+
+          <button
+            v-if="profileForm.avatarUrl"
+            class="profile-avatar-clear"
+            type="button"
+            @click="clearAvatar"
+          >
+            移除头像
+          </button>
+
+          <label class="schedule-field">
+            <span>昵称</span>
+            <input
+              v-model="profileForm.nickname"
+              autocomplete="nickname"
+              maxlength="12"
+              placeholder="例如：林小摊"
+            >
+          </label>
+
+          <label class="schedule-field">
+            <span>账号</span>
+            <input
+              v-model="profileForm.account"
+              autocomplete="username"
+              placeholder="请输入账号"
+            >
+          </label>
+
+          <p v-if="profileError" class="profile-modal__error" role="alert">{{ profileError }}</p>
+
+          <button class="profile-modal__submit" type="submit">保存资料</button>
+        </form>
+      </div>
+    </Teleport>
 
     <div class="page-card schedule-panel">
       <div class="schedule-panel__title">
-        <span class="schedule-panel__icon">▣</span>
-        <h2>日程列表</h2>
+        <div class="schedule-panel__heading">
+          <span class="schedule-panel__icon">▣</span>
+          <h2>日程列表</h2>
+        </div>
+        <button class="schedule-panel__add" type="button" aria-label="添加日程" @click="openAddDialog">
+          <el-icon><Plus /></el-icon>
+        </button>
       </div>
 
-      <div class="schedule-table" role="table" aria-label="日程列表">
+      <div v-if="sortedSchedules.length" class="schedule-table" role="table" aria-label="日程列表">
         <div class="schedule-table__head" role="row">
           <span>日期</span>
           <span>时间</span>
@@ -188,6 +394,7 @@ function deleteSchedule() {
           :key="schedule.id"
           class="schedule-row"
           type="button"
+          :aria-label="`编辑 ${formatDate(schedule.date)} ${schedule.start} 到 ${schedule.end} 的${schedule.task}日程，状态${schedule.status}`"
           @click="openEditDialog(schedule)"
         >
           <span>{{ formatDate(schedule.date) }}</span>
@@ -198,7 +405,66 @@ function deleteSchedule() {
           </em>
         </button>
       </div>
+      <div v-else class="empty-state">
+        <strong>还没有日程</strong>
+        <p>添加上课、采购或出摊安排，避免时间冲突。</p>
+      </div>
     </div>
+
+    <Teleport to=".phone-screen">
+      <div
+        v-if="isPasswordDialogOpen"
+        class="profile-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="修改密码"
+        @click.self="closePasswordDialog"
+      >
+        <form class="profile-modal__card" @submit.prevent="submitPassword">
+          <div class="profile-modal__header">
+            <div>
+              <span>账号安全</span>
+              <strong>修改密码</strong>
+            </div>
+            <button type="button" aria-label="关闭修改密码弹窗" @click="closePasswordDialog">×</button>
+          </div>
+
+          <label class="schedule-field">
+            <span>当前密码</span>
+            <input
+              v-model="passwordForm.current"
+              type="password"
+              autocomplete="current-password"
+              placeholder="请输入当前密码"
+            >
+          </label>
+
+          <label class="schedule-field">
+            <span>新密码</span>
+            <input
+              v-model="passwordForm.next"
+              type="password"
+              autocomplete="new-password"
+              placeholder="至少 6 位"
+            >
+          </label>
+
+          <label class="schedule-field">
+            <span>确认新密码</span>
+            <input
+              v-model="passwordForm.confirm"
+              type="password"
+              autocomplete="new-password"
+              placeholder="再输入一次新密码"
+            >
+          </label>
+
+          <p v-if="passwordError" class="profile-modal__error" role="alert">{{ passwordError }}</p>
+
+          <button class="profile-modal__submit" type="submit">保存新密码</button>
+        </form>
+      </div>
+    </Teleport>
 
     <Teleport to=".phone-screen">
       <div
@@ -215,7 +481,7 @@ function deleteSchedule() {
               <span>{{ editingId ? '调整安排' : '新建安排' }}</span>
               <strong>{{ dialogTitle }}</strong>
             </div>
-            <button type="button" @click="closeDialog">×</button>
+            <button type="button" aria-label="关闭日程弹窗" @click="closeDialog">×</button>
           </div>
 
           <label class="schedule-field">
@@ -235,16 +501,13 @@ function deleteSchedule() {
           </div>
 
           <label class="schedule-field">
-            <span>选择任务</span>
-            <select v-model="scheduleForm.task">
-              <option
-                v-for="task in taskOptions"
-                :key="task"
-                :value="task"
-              >
-                {{ task }}
-              </option>
-            </select>
+            <span>任务内容</span>
+            <input
+              v-model="scheduleForm.task"
+              autocomplete="off"
+              maxlength="30"
+              placeholder="例如：晚间出摊"
+            >
           </label>
 
           <label class="schedule-field">
@@ -257,7 +520,7 @@ function deleteSchedule() {
             </select>
           </label>
 
-          <p v-if="formError" class="schedule-modal__error">{{ formError }}</p>
+          <p v-if="formError" class="schedule-modal__error" role="alert">{{ formError }}</p>
 
           <div :class="['schedule-modal__actions', { 'schedule-modal__actions--edit': editingId }]">
             <button
@@ -266,7 +529,7 @@ function deleteSchedule() {
               type="button"
               @click="deleteSchedule"
             >
-              删除
+              {{ confirmDelete ? '确认删除' : '删除' }}
             </button>
             <button class="schedule-modal__submit" type="submit">
               {{ editingId ? '保存' : '添加' }}
@@ -290,84 +553,98 @@ function deleteSchedule() {
   margin-bottom: 18px;
 }
 
-.schedule-add {
+.profile-card {
   display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  border: 1px solid rgba(87, 145, 230, 0.16);
-  border-radius: 17px;
-  background: rgba(255, 255, 255, 0.94);
-  color: var(--primary);
-  box-shadow: 0 10px 24px rgba(71, 119, 183, 0.12);
-  font-size: 1.35rem;
-}
-
-.schedule-summary {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  align-items: center;
-  gap: 14px;
+  gap: 16px;
   padding: 18px;
   background: rgba(255, 255, 255, 0.96);
 }
 
-.schedule-summary__item {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
+.profile-card__identity {
+  display: flex;
   align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.profile-card__identity--button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.profile-card__avatar {
+  flex: 0 0 auto;
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #dff2ff 0%, #b9dcff 100%);
+  color: #1d5fb6;
+  box-shadow: inset 0 0 0 1px rgba(45, 115, 219, 0.12);
+  font-size: 1.2rem;
+  font-weight: 900;
+  overflow: hidden;
+}
+
+.profile-card__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-card__person {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.profile-card__person strong {
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: 1.05rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-card__person span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.schedule-summary__item + .schedule-summary__item {
-  padding-left: 14px;
-  border-left: 1px solid rgba(105, 145, 198, 0.14);
-}
-
-.schedule-summary__icon {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
+.profile-card__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 11px 10px;
+  border: 0;
   border-radius: 14px;
-  background: #edf6ff;
+  background: #eef5ff;
   color: var(--primary);
-  font-size: 1rem;
+  font-size: 0.78rem;
   font-weight: 900;
 }
 
-.schedule-summary__icon--done {
-  background: #e1f7ee;
-  color: #16a46b;
-}
-
-.schedule-summary p {
-  margin: 0 0 4px;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.schedule-summary strong {
-  color: #4b8cff;
-  font-size: 1.25rem;
-  line-height: 1;
-}
-
-.schedule-summary small {
-  margin-left: 3px;
-  color: var(--text-muted);
-  font-size: 0.7rem;
-}
-
-.schedule-summary__pill {
-  padding: 7px 10px;
-  border-radius: 999px;
-  background: #eef5ff;
-  color: var(--primary);
-  font-size: 0.72rem;
-  font-weight: 800;
-  white-space: nowrap;
+.profile-card__action--danger {
+  background: #fff1f1;
+  color: #d93636;
 }
 
 .schedule-panel {
@@ -379,8 +656,16 @@ function deleteSchedule() {
 .schedule-panel__title {
   display: flex;
   align-items: center;
-  gap: 9px;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 16px;
+}
+
+.schedule-panel__heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
 }
 
 .schedule-panel__icon {
@@ -398,6 +683,20 @@ function deleteSchedule() {
   margin: 0;
   color: var(--text-main);
   font-size: 1rem;
+}
+
+.schedule-panel__add {
+  display: grid;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 14px;
+  background: #eef5ff;
+  color: var(--primary);
+  font-size: 1.18rem;
+  font-weight: 900;
 }
 
 .schedule-table {
@@ -422,6 +721,7 @@ function deleteSchedule() {
 
 .schedule-row {
   width: 100%;
+  min-height: 44px;
   padding: 10px 0;
   border: 0;
   border-bottom: 1px solid rgba(105, 145, 198, 0.08);
@@ -470,10 +770,145 @@ function deleteSchedule() {
   color: #16a46b;
 }
 
+:global(.profile-modal) {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(17, 37, 61, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+:global(.profile-modal__card) {
+  width: min(320px, 100%);
+  padding: 18px;
+  border: 1px solid rgba(126, 165, 220, 0.18);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 60px rgba(18, 30, 52, 0.22);
+}
+
+:global(.profile-modal__header) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+:global(.profile-modal__header span) {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+:global(.profile-modal__header strong) {
+  color: var(--text-main);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+:global(.profile-modal__header button) {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 1.2rem;
+}
+
+:global(.profile-modal__error) {
+  margin: 10px 0 0;
+  color: #ef4444;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.profile-avatar-picker {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed rgba(126, 165, 220, 0.32);
+  border-radius: 18px;
+  background: #f8fbff;
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.profile-avatar-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.profile-avatar-picker__preview {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #dff2ff 0%, #b9dcff 100%);
+  color: #1d5fb6;
+  box-shadow: inset 0 0 0 1px rgba(45, 115, 219, 0.12);
+  font-size: 1.35rem;
+  font-weight: 900;
+}
+
+.profile-avatar-picker__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-avatar-picker__text {
+  color: var(--primary);
+}
+
+.profile-avatar-clear {
+  justify-self: center;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff1f1;
+  color: #d93636;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+:global(.profile-modal__submit) {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 14px;
+  padding: 12px 8px;
+  border: 0;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #6fbaff 0%, #2d73db 100%);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(45, 115, 219, 0.22);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
 :global(.schedule-modal) {
   position: absolute;
   inset: 0;
-  z-index: 9999;
+  z-index: 20;
   display: grid;
   place-items: center;
   padding: 22px;
@@ -513,8 +948,8 @@ function deleteSchedule() {
 
 :global(.schedule-modal__header button) {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 0;
   border-radius: 999px;
@@ -579,6 +1014,7 @@ function deleteSchedule() {
 :global(.schedule-modal__delete),
 :global(.schedule-modal__submit) {
   width: 100%;
+  min-height: 44px;
   padding: 12px 8px;
   border: 0;
   border-radius: 15px;
@@ -598,25 +1034,58 @@ function deleteSchedule() {
 }
 
 @media (max-width: 420px) {
-  .schedule-summary {
-    gap: 10px;
+  .profile-card {
     padding: 16px;
   }
 
-  .schedule-summary__item {
-    grid-template-columns: 36px minmax(0, 1fr);
-    gap: 8px;
+  .profile-card__avatar {
+    width: 52px;
+    height: 52px;
   }
 
-  .schedule-summary__pill {
-    padding: 6px 8px;
-    font-size: 0.68rem;
+  .profile-card__action {
+    font-size: 0.74rem;
   }
 
   .schedule-table__head,
   .schedule-row {
     grid-template-columns: 0.7fr 1.35fr 1.25fr 0.88fr;
     gap: 6px;
+  }
+}
+
+@media (max-width: 380px) {
+  .profile-card__actions {
+    gap: 8px;
+  }
+
+  .profile-card__action {
+    padding-right: 8px;
+    padding-left: 8px;
+    font-size: 0.7rem;
+  }
+
+  .schedule-panel__add {
+    width: 40px;
+    height: 40px;
+  }
+
+  .schedule-table__head {
+    display: none;
+  }
+
+  .schedule-row {
+    grid-template-columns: 0.8fr 1.2fr;
+    gap: 8px 10px;
+    padding: 12px 0;
+  }
+
+  .schedule-row strong {
+    font-size: 0.82rem;
+  }
+
+  .schedule-status {
+    justify-self: start;
   }
 }
 </style>

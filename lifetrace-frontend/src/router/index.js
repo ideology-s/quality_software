@@ -1,4 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuth } from '../composables/useAuth'
+import LoginView from '../views/LoginView.vue'
+import RegisterView from '../views/RegisterView.vue'
 import HealthWeatherView from '../views/HealthWeatherView.vue'
 import ScheduleView from '../views/ScheduleView.vue'
 import AiAssistantView from '../views/AiAssistantView.vue'
@@ -9,6 +12,24 @@ const routes = [
   {
     path: '/',
     redirect: '/health',
+  },
+  {
+    path: '/login',
+    name: 'login',
+    component: LoginView,
+    meta: {
+      public: true,
+      hideNav: true,
+    },
+  },
+  {
+    path: '/register',
+    name: 'register',
+    component: RegisterView,
+    meta: {
+      public: true,
+      hideNav: true,
+    },
   },
   {
     path: '/health',
@@ -40,6 +61,25 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+router.beforeEach((to) => {
+  const { isAuthenticated } = useAuth()
+
+  if (to.meta.public && isAuthenticated.value) {
+    return '/health'
+  }
+
+  if (!to.meta.public && !isAuthenticated.value) {
+    return {
+      path: '/login',
+      query: {
+        redirect: to.fullPath,
+      },
+    }
+  }
+
+  return true
 })
 
 export default router

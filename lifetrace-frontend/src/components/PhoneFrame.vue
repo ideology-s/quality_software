@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import { useRoute } from 'vue-router'
 import BottomNav from './BottomNav.vue'
@@ -7,6 +7,7 @@ import StatusBar from './StatusBar.vue'
 
 const route = useRoute()
 const contentRef = ref(null)
+const shouldShowNav = computed(() => !route.meta.hideNav)
 
 watch(
   () => route.fullPath,
@@ -26,7 +27,7 @@ watch(
         <div ref="contentRef" class="phone-screen__content">
           <RouterView :key="route.fullPath" />
         </div>
-        <BottomNav />
+        <BottomNav v-if="shouldShowNav" />
       </div>
     </div>
   </div>
