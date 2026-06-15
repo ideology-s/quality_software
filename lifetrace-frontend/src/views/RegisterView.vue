@@ -16,10 +16,10 @@ const form = reactive({
 
 const errorMessage = ref('')
 
-function submitRegister() {
+async function submitRegister() {
   errorMessage.value = ''
 
-  const result = register(form)
+  const result = await register(form)
 
   if (!result.ok) {
     errorMessage.value = result.message

@@ -1,36 +1,44 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { usePageNotice } from '../composables/usePageNotice'
+import { getQueueList, getQueueSummary, takeNumber, serveNext, completeOrder, cancelOrder } from '../api'
 
-const queueItems = ref([
-  {
-    number: 'A001',
-    customer: '小王',
-    order: '手工钥匙扣',
-    quantity: '×2',
-    note: '蓝色款',
-    status: '服务中',
-    tone: 'serving',
-  },
-  {
-    number: 'A002',
-    customer: '小李',
-    order: '零食包',
-    quantity: '×1',
-    note: '不要辣',
-    status: '等待中',
-    tone: 'waiting',
-  },
-  {
-    number: 'A003',
-    customer: '小张',
-    order: '二手教材',
-    quantity: '×1',
-    note: '线下自取',
-    status: '等待中',
-    tone: 'waiting',
-  },
-])
+const queueItems = ref([])
+const queueSummary = ref({ current_number: null, queue_count: 0, is_crowded: false })
+const loading = ref(false)
+
+const { notice, showNotice } = usePageNotice()
+
+async function fetchQueue() {
+  loading.value = true
+  try {
+    const [listRes, sumRes] = await Promise.all([
+      getQueueList(),
+      getQueueSummary(),
+    ])
+    queueItems.value = (listRes.data.data || []).map(item => ({
+      number: item.number,
+      customer: item.customer,
+      order: item.order || item.order_content,
+      quantity: item.quantity,
+      note: item.note,
+      status: item.status,
+      tone: getTone(item.status),
+    }))
+    queueSummary.value = sumRes.data.data || { current_number: null, queue_count: 0, is_crowded: false }
+  } catch (e) {
+    showNotice('加载排队信息失败', 'warning')
+  } finally {
+    loading.value = false
+  }
+}
+
+function getTone(status) {
+  const map = { '服务中': 'serving', '等待中': 'waiting', '已完成': 'completed', '已取消': 'cancelled' }
+  return map[status] || 'waiting'
+}
+
+onMounted(() => fetchQueue())
 
 const actionItems = [
   { id: 'add', label: '新增取号', icon: '+', tone: 'neutral' },
@@ -41,7 +49,6 @@ const actionItems = [
 
 const isDialogOpen = ref(false)
 const formError = ref('')
-const { notice, showNotice } = usePageNotice()
 const queueForm = reactive({
   customer: '',
   orderText: '',
@@ -52,22 +59,9 @@ const currentService = computed(() =>
   queueItems.value.find((item) => item.tone === 'serving'),
 )
 
-const activeCount = computed(() =>
-  queueItems.value.filter((item) => ['serving', 'waiting'].includes(item.tone)).length,
-)
-
-const nextNumber = computed(() => {
-  const maxNumber = queueItems.value.reduce((max, item) => {
-    const value = Number.parseInt(item.number.replace(/\D/g, ''), 10)
-    return Number.isNaN(value) ? max : Math.max(max, value)
-  }, 0)
-
-  return `A${String(maxNumber + 1).padStart(3, '0')}`
-})
-
 const summaryItems = computed(() => [
   { label: '当前号码', value: currentService.value?.number ?? '--', tone: 'primary' },
-  { label: '排队人数', value: `${activeCount.value} 人`, tone: 'default' },
+  { label: '排队人数', value: `${queueSummary.value.queue_count} 人`, tone: 'default' },
   { label: '服务状态', value: currentService.value?.status ?? '待叫号', tone: currentService.value ? 'success' : 'default' },
 ])
 
@@ -104,120 +98,79 @@ function parseOrderText(orderText) {
   }
 }
 
-function submitNewTicket() {
+async function submitNewTicket() {
   if (!queueForm.customer.trim() || !queueForm.orderText.trim()) {
     formError.value = '请填写顾客姓名和商品内容'
     return
   }
 
   const parsedOrder = parseOrderText(queueForm.orderText)
-  const shouldServeNow = !currentService.value
 
-  const newNumber = nextNumber.value
-
-  queueItems.value.push({
-    number: newNumber,
-    customer: queueForm.customer.trim(),
-    order: parsedOrder.order,
-    quantity: parsedOrder.quantity,
-    note: queueForm.note.trim() || '无备注',
-    status: shouldServeNow ? '服务中' : '等待中',
-    tone: shouldServeNow ? 'serving' : 'waiting',
-  })
-
-  closeAddDialog()
-  showNotice(`${newNumber} 已取号${shouldServeNow ? '，已进入服务中' : '，已加入等待队列'}`)
-}
-
-function moveCurrentToEnd(status, tone) {
-  const currentIndex = queueItems.value.findIndex((item) => item.tone === 'serving')
-
-  if (currentIndex === -1) {
-    return null
+  try {
+    const res = await takeNumber({
+      customer: queueForm.customer.trim(),
+      order: parsedOrder.order,
+      quantity: parsedOrder.quantity,
+      note: queueForm.note.trim() || '无备注',
+    })
+    if (res.data.code === 409) {
+      formError.value = res.data.message
+      return
+    }
+    closeAddDialog()
+    showNotice('取号成功')
+    await fetchQueue()
+  } catch (e) {
+    const msg = e.response?.data?.message || '取号失败'
+    formError.value = msg
+    showNotice(msg, 'warning')
   }
-
-  const [currentItem] = queueItems.value.splice(currentIndex, 1)
-  queueItems.value.push({
-    ...currentItem,
-    status,
-    tone,
-  })
-
-  return currentItem
 }
 
-function callNext() {
-  const currentIndex = queueItems.value.findIndex((item) => item.tone === 'serving')
-  const nextAfterCurrent = queueItems.value.findIndex(
-    (item, index) => index > currentIndex && item.tone === 'waiting',
-  )
-  const nextIndex = nextAfterCurrent === -1
-    ? queueItems.value.findIndex((item) => item.tone === 'waiting')
-    : nextAfterCurrent
-
-  if (nextIndex === -1) {
-    showNotice('当前没有等待中的号码', 'warning')
+async function handleAction(actionId) {
+  if (actionId === 'add') {
+    openAddDialog()
     return
   }
 
-  if (currentIndex !== -1) {
-    queueItems.value[currentIndex] = {
-      ...queueItems.value[currentIndex],
-      status: '等待中',
-      tone: 'waiting',
+  try {
+    if (actionId === 'next') {
+      const res = await serveNext('_')
+      if (res.data.code === 400) {
+        showNotice(res.data.message, 'warning')
+      } else {
+        showNotice('已叫号')
+      }
+    } else if (actionId === 'complete') {
+      if (!currentService.value) {
+        showNotice('暂无正在服务的订单', 'warning')
+        return
+      }
+      await completeOrder(currentService.value.number)
+      showNotice('订单已完成')
+    } else if (actionId === 'cancel') {
+      if (!currentService.value) {
+        showNotice('暂无正在服务的订单', 'warning')
+        return
+      }
+      await cancelOrder(currentService.value.number)
+      showNotice('订单已取消')
     }
+    await fetchQueue()
+  } catch (e) {
+    const msg = e.response?.data?.message || '操作失败'
+    showNotice(msg, 'warning')
   }
-
-  queueItems.value[nextIndex] = {
-    ...queueItems.value[nextIndex],
-    status: '服务中',
-    tone: 'serving',
-  }
-
-  showNotice(`已叫号 ${queueItems.value[nextIndex].number}`)
 }
 
 function isActionUnavailable(actionId) {
   if (['complete', 'cancel'].includes(actionId)) {
     return !currentService.value
   }
-
   if (actionId === 'next') {
     return !queueItems.value.some((item) => item.tone === 'waiting')
   }
-
   return false
-}
-
-function handleAction(actionId) {
-  if (actionId === 'add') {
-    openAddDialog()
-    return
-  }
-
-  if (actionId === 'next') {
-    callNext()
-    return
-  }
-
-  if (actionId === 'complete') {
-    const completed = moveCurrentToEnd('已完成', 'completed')
-    if (!completed) {
-      showNotice('当前没有服务中的号码', 'warning')
-      return
-    }
-    showNotice(`${completed.number} 已完成`)
-    return
-  }
-
-  if (actionId === 'cancel') {
-    const cancelled = moveCurrentToEnd('已取消', 'cancelled')
-    if (!cancelled) {
-      showNotice('当前没有可取消的服务号码', 'warning')
-      return
-    }
-    showNotice(`${cancelled.number} 已取消`, 'warning')
-  }
 }
 </script>
 
@@ -274,7 +227,9 @@ function handleAction(actionId) {
         </button>
       </div>
 
-      <div v-if="queueItems.length" class="queue-list">
+      <div v-if="loading" class="empty-state">加载中…</div>
+
+      <div v-else-if="queueItems.length" class="queue-list">
         <article
           v-for="item in queueItems"
           :key="item.number"

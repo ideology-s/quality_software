@@ -1,21 +1,35 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Lock, Plus, SwitchButton } from '@element-plus/icons-vue'
 import { useAuth } from '../composables/useAuth'
 import { usePageNotice } from '../composables/usePageNotice'
+import { getSchedules, getScheduleSummary, createSchedule, updateSchedule, deleteSchedule as apiDeleteSchedule } from '../api'
 
 const router = useRouter()
 const { currentUser, logout, updateProfile } = useAuth()
 
-const schedules = ref([
-  { id: 1, date: '2026-05-24', start: '08:30', end: '10:00', task: '上课', status: '待办' },
-  { id: 2, date: '2026-05-24', start: '14:00', end: '15:00', task: '进货采购', status: '进行中' },
-  { id: 3, date: '2026-05-24', start: '17:30', end: '20:30', task: '晚间出摊', status: '待办' },
-  { id: 4, date: '2026-05-24', start: '21:00', end: '21:30', task: '整理库存', status: '已完成' },
-  { id: 5, date: '2026-05-25', start: '09:00', end: '10:00', task: '回复客户消息', status: '已完成' },
-  { id: 6, date: '2026-05-25', start: '15:00', end: '16:00', task: '准备明日货品', status: '未开始' },
-])
+const schedules = ref([])
+const summary = ref({ pending_count: 0, completed_count: 0, total_count: 0 })
+const loading = ref(false)
+
+async function fetchSchedules() {
+  loading.value = true
+  try {
+    const [schedRes, sumRes] = await Promise.all([
+      getSchedules(),
+      getScheduleSummary(),
+    ])
+    schedules.value = schedRes.data.data || []
+    summary.value = sumRes.data.data || { pending_count: 0, completed_count: 0, total_count: 0 }
+  } catch (e) {
+    showNotice('加载日程失败', 'warning')
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => fetchSchedules())
 
 const isDialogOpen = ref(false)
 const isProfileDialogOpen = ref(false)
@@ -71,7 +85,8 @@ function formatDate(date) {
 }
 
 function resetForm() {
-  scheduleForm.date = '2026-05-24'
+  const today = new Date().toISOString().slice(0, 10)
+  scheduleForm.date = today
   scheduleForm.start = '09:00'
   scheduleForm.end = '10:00'
   scheduleForm.task = ''
@@ -204,7 +219,7 @@ function handleLogout() {
   })
 }
 
-function submitSchedule() {
+async function submitSchedule() {
   if (!scheduleForm.date || !scheduleForm.start || !scheduleForm.end || !scheduleForm.task.trim()) {
     formError.value = '请完整填写日期、时间和任务'
     return
@@ -223,32 +238,24 @@ function submitSchedule() {
     status: scheduleForm.status,
   }
 
-  const isEditing = Boolean(editingId.value)
-
-  if (isEditing) {
-    const index = schedules.value.findIndex((item) => item.id === editingId.value)
-
-    if (index !== -1) {
-      schedules.value[index] = {
-        ...schedules.value[index],
-        ...payload,
-      }
+  try {
+    if (editingId.value) {
+      await updateSchedule(editingId.value, payload)
+    } else {
+      await createSchedule(payload)
     }
-  } else {
-    schedules.value.push({
-      id: Date.now(),
-      ...payload,
-    })
+    closeDialog()
+    showNotice(editingId.value ? '日程已保存' : '新日程已添加')
+    await fetchSchedules()
+  } catch (e) {
+    const msg = e.response?.data?.message || '操作失败'
+    formError.value = msg
+    showNotice(msg, 'warning')
   }
-
-  closeDialog()
-  showNotice(isEditing ? '日程已保存' : '新日程已添加')
 }
 
-function deleteSchedule() {
-  if (!editingId.value) {
-    return
-  }
+async function deleteSchedule() {
+  if (!editingId.value) return
 
   if (!confirmDelete.value) {
     confirmDelete.value = true
@@ -256,10 +263,14 @@ function deleteSchedule() {
     return
   }
 
-  const deletedTask = scheduleForm.task
-  schedules.value = schedules.value.filter((item) => item.id !== editingId.value)
-  closeDialog()
-  showNotice(`已删除「${deletedTask}」`)
+  try {
+    await apiDeleteSchedule(editingId.value)
+    closeDialog()
+    showNotice('日程已删除')
+    await fetchSchedules()
+  } catch (e) {
+    showNotice('删除失败', 'warning')
+  }
 }
 </script>
 
@@ -382,7 +393,9 @@ function deleteSchedule() {
         </button>
       </div>
 
-      <div v-if="sortedSchedules.length" class="schedule-table" role="table" aria-label="日程列表">
+      <div v-if="loading" class="empty-state">加载中…</div>
+
+      <div v-else-if="sortedSchedules.length" class="schedule-table" role="table" aria-label="日程列表">
         <div class="schedule-table__head" role="row">
           <span>日期</span>
           <span>时间</span>

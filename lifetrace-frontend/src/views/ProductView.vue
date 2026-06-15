@@ -1,49 +1,47 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { usePageNotice } from '../composables/usePageNotice'
+import { getProducts, getProductSummary, createProduct, updateProduct, deleteProduct as apiDeleteProduct, sellProduct } from '../api'
 
-const products = ref([
-  {
-    id: 1,
-    name: '手工钥匙扣',
-    price: 15,
-    cost: 12,
-    stock: 86,
-    sold: 12,
-    image: '',
-    icon: '☁',
-    theme: 'sky',
-  },
-  {
-    id: 2,
-    name: '零食包',
-    price: 8,
-    cost: 6.8,
-    stock: 7,
-    sold: 18,
-    image: '',
-    icon: '好吃',
-    theme: 'snack',
-  },
-  {
-    id: 3,
-    name: '二手教材',
-    price: 20,
-    cost: 20,
-    stock: 0,
-    sold: 10,
-    image: '',
-    icon: '高等数学',
-    theme: 'book',
-  },
-])
+const products = ref([])
+const stats = ref({ total_income: 0, total_profit: 0, product_count: 0 })
+const loading = ref(false)
+
+const { notice, showNotice } = usePageNotice()
+
+async function fetchProducts() {
+  loading.value = true
+  try {
+    const [prodRes, sumRes] = await Promise.all([
+      getProducts(),
+      getProductSummary(),
+    ])
+    products.value = (prodRes.data.data || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      cost: p.cost,
+      stock: p.stock,
+      sold: p.sold,
+      image: p.image || '',
+      icon: p.name ? p.name.slice(0, 2) : '商品',
+      theme: 'custom',
+    }))
+    stats.value = sumRes.data.data || { total_income: 0, total_profit: 0, product_count: 0 }
+  } catch (e) {
+    showNotice('加载商品失败', 'warning')
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => fetchProducts())
 
 const isDialogOpen = ref(false)
 const editingId = ref(null)
 const formError = ref('')
 const confirmDelete = ref(false)
-const { notice, showNotice } = usePageNotice()
 
 const productForm = reactive({
   name: '',
@@ -53,18 +51,10 @@ const productForm = reactive({
   image: '',
 })
 
-const productStats = computed(() => {
-  const income = products.value.reduce((sum, product) => sum + product.price * product.sold, 0)
-  const profit = products.value.reduce(
-    (sum, product) => sum + Math.max(product.price - product.cost, 0) * product.sold,
-    0,
-  )
-
-  return [
-    { label: '今日收入', value: `¥${Math.round(income)}`, icon: '¥' },
-    { label: '今日利润', value: `¥${Math.round(profit)}`, icon: '▥' },
-  ]
-})
+const productStats = computed(() => [
+  { label: '今日收入', value: `¥${Math.round(stats.value.total_income)}`, icon: '¥' },
+  { label: '今日利润', value: `¥${Math.round(stats.value.total_profit)}`, icon: '▥' },
+])
 
 const dialogTitle = computed(() => (editingId.value ? '修改商品' : '新增商品'))
 
@@ -134,7 +124,7 @@ function handleImageUpload(event) {
   reader.readAsDataURL(file)
 }
 
-function submitProduct() {
+async function submitProduct() {
   const price = Number(productForm.price)
   const stock = Number.parseInt(productForm.stock, 10)
   const cost = Number(productForm.cost)
@@ -157,35 +147,24 @@ function submitProduct() {
     image: productForm.image,
   }
 
-  const isEditing = Boolean(editingId.value)
-
-  if (isEditing) {
-    const index = products.value.findIndex((product) => product.id === editingId.value)
-
-    if (index !== -1) {
-      products.value[index] = {
-        ...products.value[index],
-        ...payload,
-      }
+  try {
+    if (editingId.value) {
+      await updateProduct(editingId.value, payload)
+    } else {
+      await createProduct(payload)
     }
-  } else {
-    products.value.unshift({
-      id: Date.now(),
-      sold: 0,
-      icon: productForm.name.trim().slice(0, 2),
-      theme: 'custom',
-      ...payload,
-    })
+    closeDialog()
+    showNotice(editingId.value ? '商品信息已保存' : '新商品已添加')
+    await fetchProducts()
+  } catch (e) {
+    const msg = e.response?.data?.message || '操作失败'
+    formError.value = msg
+    showNotice(msg, 'warning')
   }
-
-  closeDialog()
-  showNotice(isEditing ? '商品信息已保存' : '新商品已添加')
 }
 
-function deleteProduct() {
-  if (!editingId.value) {
-    return
-  }
+async function deleteProduct() {
+  if (!editingId.value) return
 
   if (!confirmDelete.value) {
     confirmDelete.value = true
@@ -193,10 +172,25 @@ function deleteProduct() {
     return
   }
 
-  const deletedName = productForm.name
-  products.value = products.value.filter((product) => product.id !== editingId.value)
-  closeDialog()
-  showNotice(`已删除「${deletedName}」`)
+  try {
+    await apiDeleteProduct(editingId.value)
+    closeDialog()
+    showNotice('商品已删除')
+    await fetchProducts()
+  } catch (e) {
+    showNotice('删除失败', 'warning')
+  }
+}
+
+async function handleSell(product) {
+  try {
+    await sellProduct(product.id, 1)
+    showNotice(`${product.name} 已售出 1 件`)
+    await fetchProducts()
+  } catch (e) {
+    const msg = e.response?.data?.message || '售卖失败'
+    showNotice(msg, 'warning')
+  }
 }
 </script>
 
@@ -238,10 +232,12 @@ function deleteProduct() {
 
     <div class="product-section-title">
       <h2>商品列表</h2>
-      <span>共 {{ products.length }} 件商品</span>
+      <span>共 {{ stats.product_count }} 件商品</span>
     </div>
 
-    <div v-if="products.length" class="product-list">
+    <div v-if="loading" class="empty-state">加载中…</div>
+
+    <div v-else-if="products.length" class="product-list">
       <button
         v-for="product in products"
         :key="product.id"
@@ -285,6 +281,14 @@ function deleteProduct() {
               <strong>¥{{ getProductProfit(product) }}</strong>
             </div>
           </div>
+          <button
+            v-if="product.stock > 0"
+            class="sell-btn"
+            type="button"
+            @click.stop="handleSell(product)"
+          >
+            售出 1 件
+          </button>
         </div>
       </button>
     </div>
@@ -650,6 +654,18 @@ function deleteProduct() {
 
 .product-metrics .is-warning {
   color: #f07c22;
+}
+
+.sell-btn {
+  margin-top: 10px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #6fbaff 0%, #2d73db 100%);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 :global(.product-modal) {

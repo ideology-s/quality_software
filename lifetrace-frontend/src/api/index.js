@@ -1,9 +1,40 @@
 import axios from 'axios'
 
+const TOKEN_KEY = 'lifetrace-token'
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 15000,
 })
+
+api.interceptors.request.use((config) => {
+  const token = window.localStorage.getItem(TOKEN_KEY)
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+api.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    if (error.response?.status === 401) {
+      window.localStorage.removeItem(TOKEN_KEY)
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  },
+)
+
+// ===== 认证 =====
+
+export function login(data) {
+  return api.post('/auth/login', data)
+}
+
+export function register(data) {
+  return api.post('/auth/register', data)
+}
 
 // ===== 出摊日志 =====
 

@@ -11,7 +11,7 @@ def chat_with_ai(message: str):
         }
 
     try:
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
         response = client.chat.completions.create(
             model=settings.OPENAI_MODEL,
             messages=[

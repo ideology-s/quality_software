@@ -16,11 +16,11 @@ const form = reactive({
 const errorMessage = ref('')
 const statusMessage = ref(route.query.loggedOut ? '已退出登录，下次出摊再回来。' : '')
 
-function submitLogin() {
+async function submitLogin() {
   errorMessage.value = ''
   statusMessage.value = ''
 
-  const result = login(form)
+  const result = await login(form)
 
   if (!result.ok) {
     errorMessage.value = result.message

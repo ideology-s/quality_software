@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   Calendar,
   Clock,
@@ -8,90 +8,73 @@ import {
   Wallet,
 } from '@element-plus/icons-vue'
 import { usePageNotice } from '../composables/usePageNotice'
+import { getStallLogs, createStallLog, updateStallLog, deleteStallLog, getWeeklySummary } from '../api'
 
 const isDialogOpen = ref(false)
 const editingLogId = ref(null)
 const formError = ref('')
 const selectedLogDate = ref('all')
+const loading = ref(false)
 const { notice, showNotice } = usePageNotice()
 
-const logs = ref([
-  {
-    id: 1,
-    date: '2026-06-11',
-    weekday: '周三',
-    start: '17:30',
-    end: '20:30',
-    location: '下沙大学城夜市',
-    income: 128,
-    profit: 45,
-    note: '客流稳定，零食包销量较好',
-  },
-  {
-    id: 2,
-    date: '2026-06-10',
-    weekday: '周二',
-    start: '18:00',
-    end: '21:00',
-    location: '宿舍楼下',
-    income: 96,
-    profit: 32,
-    note: '钥匙扣卖得较好',
-  },
-  {
-    id: 3,
-    date: '2026-06-08',
-    weekday: '周日',
-    start: '14:00',
-    end: '16:30',
-    location: '社团集市',
-    income: 156,
-    profit: 58,
-    note: '人流较多，库存消耗快',
-  },
-  {
-    id: 4,
-    date: '2026-06-05',
-    weekday: '周四',
-    start: '19:00',
-    end: '22:00',
-    location: '学校东门步行街',
-    income: 80,
-    profit: 18,
-    note: '天气热，饮品更受欢迎',
-  },
-  {
-    id: 5,
-    date: '2026-06-03',
-    weekday: '周二',
-    start: '17:00',
-    end: '20:00',
-    location: '地铁口附近',
-    income: 72,
-    profit: 20,
-    note: '客流一般，主要卖钥匙扣',
-  },
-])
+const logs = ref([])
+
+const weekSummary = ref({
+  count: 0,
+  hours: '0',
+  income: 0,
+})
+
+async function fetchLogs() {
+  loading.value = true
+  try {
+    const res = await getStallLogs()
+    const data = res.data.data || []
+    logs.value = data.map(log => ({
+      id: log.id,
+      date: log.date,
+      weekday: getWeekday(log.date),
+      start: log.start_time,
+      end: log.end_time,
+      location: log.location,
+      income: log.income,
+      profit: log.profit,
+      note: log.note || '',
+    }))
+  } catch (e) {
+    showNotice('加载日志失败', 'warning')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchWeekSummary() {
+  try {
+    const res = await getWeeklySummary()
+    const data = res.data.data
+    weekSummary.value = {
+      count: data.count || 0,
+      hours: String(data.total_hours || 0),
+      income: data.total_income || 0,
+    }
+  } catch (e) {
+    // fallback to 0
+  }
+}
+
+onMounted(() => {
+  fetchLogs()
+  fetchWeekSummary()
+})
 
 const logForm = reactive({
-  date: '2026-06-12',
-  start: '18:00',
-  end: '21:00',
+  date: '',
+  start: '',
+  end: '',
   location: '',
   income: '',
   profit: '',
   note: '',
-})
-
-const weekSummary = computed(() => {
-  const totalMinutes = logs.value.reduce((sum, log) => sum + getDurationMinutes(log.start, log.end), 0)
-  const totalIncome = logs.value.reduce((sum, log) => sum + log.income, 0)
-
-  return {
-    count: logs.value.length,
-    hours: (totalMinutes / 60).toFixed(1),
-    income: totalIncome,
-  }
 })
 
 const sortedLogs = computed(() =>
@@ -136,7 +119,8 @@ function formatDate(date) {
 }
 
 function resetForm() {
-  logForm.date = '2026-06-12'
+  const today = new Date().toISOString().slice(0, 10)
+  logForm.date = today
   logForm.start = '18:00'
   logForm.end = '21:00'
   logForm.location = ''
@@ -165,7 +149,7 @@ function openLogDetail(log) {
   isDialogOpen.value = true
 }
 
-function saveLog() {
+async function saveLog() {
   if (!logForm.location.trim()) {
     formError.value = '请填写出摊地点'
     return
@@ -173,35 +157,44 @@ function saveLog() {
 
   const payload = {
     date: logForm.date,
-    weekday: getWeekday(logForm.date),
-    start: logForm.start,
-    end: logForm.end,
+    start_time: logForm.start,
+    end_time: logForm.end,
     location: logForm.location.trim(),
     income: Number(logForm.income) || 0,
     profit: Number(logForm.profit) || 0,
-    note: logForm.note.trim() || '暂无备注',
+    note: logForm.note.trim() || '',
   }
 
   const isEditing = Boolean(editingLogId.value)
 
-  if (isEditing) {
-    const index = logs.value.findIndex((log) => log.id === editingLogId.value)
-
-    if (index !== -1) {
-      logs.value[index] = {
-        ...logs.value[index],
-        ...payload,
-      }
+  try {
+    if (isEditing) {
+      await updateStallLog(editingLogId.value, payload)
+    } else {
+      await createStallLog(payload)
     }
-  } else {
-    logs.value.unshift({
-      id: Date.now(),
-      ...payload,
-    })
+    isDialogOpen.value = false
+    showNotice(isEditing ? '日志已保存' : '新日志已记录')
+    await fetchLogs()
+    await fetchWeekSummary()
+  } catch (e) {
+    const msg = e.response?.data?.message || '操作失败'
+    formError.value = msg
+    showNotice(msg, 'warning')
   }
+}
 
-  isDialogOpen.value = false
-  showNotice(isEditing ? '日志已保存' : '新日志已记录')
+async function removeLog() {
+  if (!editingLogId.value) return
+  try {
+    await deleteStallLog(editingLogId.value)
+    isDialogOpen.value = false
+    showNotice('日志已删除')
+    await fetchLogs()
+    await fetchWeekSummary()
+  } catch (e) {
+    showNotice('删除失败', 'warning')
+  }
 }
 </script>
 
@@ -278,7 +271,13 @@ function saveLog() {
         </label>
       </div>
 
-      <div v-if="filteredLogs.length" class="log-list">
+      <div v-if="loading" class="log-empty">加载中…</div>
+
+      <div v-else-if="!filteredLogs.length" class="log-empty">
+        暂无出摊日志，点击右上角新增日志
+      </div>
+
+      <div v-else class="log-list">
         <button
           v-for="log in filteredLogs"
           :key="log.id"
