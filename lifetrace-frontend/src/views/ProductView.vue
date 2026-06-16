@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { usePageNotice } from '../composables/usePageNotice'
-import { getProducts, getProductSummary, createProduct, updateProduct, deleteProduct as apiDeleteProduct, sellProduct } from '../api'
+import { getProducts, getProductSummary, createProduct, updateProduct, deleteProduct as apiDeleteProduct } from '../api'
 
 const products = ref([])
 const stats = ref({ total_income: 0, total_profit: 0, product_count: 0 })
@@ -181,17 +181,6 @@ async function deleteProduct() {
     showNotice('删除失败', 'warning')
   }
 }
-
-async function handleSell(product) {
-  try {
-    await sellProduct(product.id, 1)
-    showNotice(`${product.name} 已售出 1 件`)
-    await fetchProducts()
-  } catch (e) {
-    const msg = e.response?.data?.message || '售卖失败'
-    showNotice(msg, 'warning')
-  }
-}
 </script>
 
 <template>
@@ -281,14 +270,6 @@ async function handleSell(product) {
               <strong>¥{{ getProductProfit(product) }}</strong>
             </div>
           </div>
-          <button
-            v-if="product.stock > 0"
-            class="sell-btn"
-            type="button"
-            @click.stop="handleSell(product)"
-          >
-            售出 1 件
-          </button>
         </div>
       </button>
     </div>
@@ -654,18 +635,6 @@ async function handleSell(product) {
 
 .product-metrics .is-warning {
   color: #f07c22;
-}
-
-.sell-btn {
-  margin-top: 10px;
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #6fbaff 0%, #2d73db 100%);
-  color: #ffffff;
-  font-size: 0.72rem;
-  font-weight: 800;
-  cursor: pointer;
 }
 
 :global(.product-modal) {

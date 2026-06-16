@@ -1,8 +1,14 @@
-from datetime import date, timedelta
+from datetime import date, time as dt_time, timedelta, datetime, timezone
 from sqlalchemy.orm import Session
 from app.models.stall_log import StallLog
 from app.models.weather import Weather
-from app.schemas.stall_log import StallLogCreate, StallLogUpdate, WeatherCreate
+from app.models.queue_order import QueueOrder
+from app.schemas.stall_log import StallLogCreate, StallLogUpdate, WeatherCreate, StartStallRequest
+
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+def beijing_now():
+    return datetime.now(BEIJING_TZ)
 
 def get_stall_logs(db: Session):
     return db.query(StallLog).order_by(StallLog.date.desc(), StallLog.start_time.desc()).all()
@@ -36,9 +42,9 @@ def delete_stall_log(db: Session, log_id: int):
     return True
 
 def get_weekly_summary(db: Session):
-    today = date.today()
+    today = beijing_now().date()
     week_start = today - timedelta(days=today.weekday())
-    logs = db.query(StallLog).filter(StallLog.date >= week_start).all()
+    logs = db.query(StallLog).filter(StallLog.date >= week_start, StallLog.status == "已结束").all()
     count = len(logs)
     total_hours = 0.0
     total_income = 0.0
@@ -52,13 +58,13 @@ def get_weekly_summary(db: Session):
         total_profit += log.profit
     return {
         "count": count,
-        "total_hours": round(total_hours, 1),
+        "total_hours": round(total_hours, 2),
         "total_income": round(total_income, 2),
         "total_profit": round(total_profit, 2),
     }
 
 def set_weather(db: Session, data: WeatherCreate):
-    today = date.today()
+    today = beijing_now().date()
     existing = db.query(Weather).filter(Weather.date == today).first()
     if existing:
         for key, val in data.model_dump().items():
@@ -73,7 +79,7 @@ def set_weather(db: Session, data: WeatherCreate):
     return record
 
 def get_today_weather(db: Session):
-    return db.query(Weather).filter(Weather.date == date.today()).first()
+    return db.query(Weather).filter(Weather.date == beijing_now().date()).first()
 
 def get_stall_advice(db: Session, sleep_hours: float, work_hours: float,
                      is_unwell: bool, planned_stall_hours: float, location_type: str):
@@ -157,3 +163,49 @@ def get_stall_advice(db: Session, sleep_hours: float, work_hours: float,
         "details": details,
         "is_recommended": is_recommended,
     }
+
+def start_stall(db: Session, location: str):
+    existing = db.query(StallLog).filter(StallLog.status == "进行中").first()
+    if existing:
+        return None
+    now = beijing_now()
+    log = StallLog(
+        date=now.date(),
+        start_time=now.time().replace(second=0, microsecond=0),
+        end_time=None,
+        location=location,
+        income=0,
+        profit=0,
+        note="",
+        status="进行中",
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return log
+
+def end_stall(db: Session, log_id: int, note: str = ""):
+    log = db.query(StallLog).filter(StallLog.id == log_id, StallLog.status == "进行中").first()
+    if not log:
+        return None
+
+    now = beijing_now()
+    log.end_time = now.time().replace(second=0, microsecond=0)
+    log.status = "已结束"
+
+    orders = db.query(QueueOrder).filter(
+        QueueOrder.stall_log_id == log_id,
+        QueueOrder.status == "已完成"
+    ).all()
+
+    log.income = sum(o.total_price for o in orders)
+    log.profit = sum(o.total_price - o.total_cost for o in orders)
+    if note:
+        log.note = note
+
+    db.commit()
+    db.refresh(log)
+    return log
+
+def get_active_stall(db: Session):
+    return db.query(StallLog).filter(StallLog.status == "进行中").order_by(StallLog.id.desc()).first()

@@ -1,10 +1,13 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, List
+
+class OrderItem(BaseModel):
+    product_id: int
+    quantity: int = 1
 
 class QueueOrderCreate(BaseModel):
     customer: str
-    order: str
-    quantity: str = "×1"
+    items: List[OrderItem]
     note: str = "无备注"
 
 class QueueOrderResponse(BaseModel):
@@ -16,6 +19,10 @@ class QueueOrderResponse(BaseModel):
     quantity: str
     note: str
     status: str
+    items: list = []
+    total_price: float = 0
+    total_cost: float = 0
+    stall_log_id: Optional[int] = None
 
 class QueueSummary(BaseModel):
     current_number: Optional[str]

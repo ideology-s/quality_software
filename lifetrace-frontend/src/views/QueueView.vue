@@ -1,11 +1,12 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { usePageNotice } from '../composables/usePageNotice'
-import { getQueueList, getQueueSummary, takeNumber, serveNext, completeOrder, cancelOrder } from '../api'
+import { getQueueList, getQueueSummary, takeNumber, serveNext, completeOrder, cancelOrder, getProducts, getActiveStall } from '../api'
 
 const queueItems = ref([])
 const queueSummary = ref({ current_number: null, queue_count: 0, is_crowded: false })
 const loading = ref(false)
+const activeStall = ref(null)
 
 const { notice, showNotice } = usePageNotice()
 
@@ -24,12 +25,23 @@ async function fetchQueue() {
       note: item.note,
       status: item.status,
       tone: getTone(item.status),
+      items: item.items,
+      total_price: item.total_price,
     }))
-    queueSummary.value = sumRes.data.data || { current_number: null, queue_count: 0, is_crowded: false }
+    queueSummary.value = sumRes.data.data || { current_number: null, queue_count: 0, is_crowded: false, next_number: 'A001' }
   } catch (e) {
     showNotice('加载排队信息失败', 'warning')
   } finally {
     loading.value = false
+  }
+}
+
+async function fetchActiveStall() {
+  try {
+    const res = await getActiveStall()
+    activeStall.value = res.data.data
+  } catch (e) {
+    activeStall.value = null
   }
 }
 
@@ -38,7 +50,9 @@ function getTone(status) {
   return map[status] || 'waiting'
 }
 
-onMounted(() => fetchQueue())
+onMounted(async () => {
+  await Promise.all([fetchQueue(), fetchActiveStall()])
+})
 
 const actionItems = [
   { id: 'add', label: '新增取号', icon: '+', tone: 'neutral' },
@@ -48,10 +62,12 @@ const actionItems = [
 ]
 
 const isDialogOpen = ref(false)
+const showProductPicker = ref(false)
 const formError = ref('')
+const products = ref([])
+const selectedProducts = ref([])
 const queueForm = reactive({
   customer: '',
-  orderText: '',
   note: '',
 })
 
@@ -67,50 +83,98 @@ const summaryItems = computed(() => [
 
 function resetForm() {
   queueForm.customer = ''
-  queueForm.orderText = ''
   queueForm.note = ''
+  selectedProducts.value = []
+  showProductPicker.value = false
   formError.value = ''
 }
 
-function openAddDialog() {
+async function openAddDialog() {
   resetForm()
+  await fetchActiveStall()
+  if (!activeStall.value) {
+    showNotice('当前未出摊，无法取号', 'warning')
+    return
+  }
+  try {
+    const [prodRes, sumRes] = await Promise.all([
+      getProducts(),
+      getQueueSummary(),
+    ])
+    products.value = prodRes.data.data || []
+    queueSummary.value = sumRes.data.data || { current_number: null, queue_count: 0, is_crowded: false, next_number: 'A001' }
+  } catch (e) {
+    products.value = []
+  }
   isDialogOpen.value = true
 }
 
 function closeAddDialog() {
   isDialogOpen.value = false
+  showProductPicker.value = false
   formError.value = ''
 }
 
-function parseOrderText(orderText) {
-  const match = orderText.trim().match(/^(.*?)(?:\s*[x×]\s*(\d+))$/i)
-
-  if (!match) {
-    return {
-      order: orderText.trim(),
-      quantity: '×1',
-    }
-  }
-
-  return {
-    order: match[1].trim(),
-    quantity: `×${match[2]}`,
+function toggleProduct(product) {
+  const idx = selectedProducts.value.findIndex(p => p.product_id === product.id)
+  if (idx >= 0) {
+    selectedProducts.value.splice(idx, 1)
+  } else {
+    selectedProducts.value.push({
+      product_id: product.id,
+      name: product.name,
+      price: product.price,
+      cost: product.cost || 0,
+      quantity: 1,
+    })
   }
 }
 
+function updateProductQuantity(productId, quantity) {
+  const p = selectedProducts.value.find(p => p.product_id === productId)
+  if (p) {
+    p.quantity = Math.max(1, quantity)
+  }
+}
+
+function removeProduct(productId) {
+  const idx = selectedProducts.value.findIndex(p => p.product_id === productId)
+  if (idx >= 0) {
+    selectedProducts.value.splice(idx, 1)
+  }
+}
+
+function isProductSelected(productId) {
+  return selectedProducts.value.some(p => p.product_id === productId)
+}
+
+function getProductQuantity(productId) {
+  const p = selectedProducts.value.find(p => p.product_id === productId)
+  return p ? p.quantity : 0
+}
+
+const productTotal = computed(() => {
+  const itemsPrice = selectedProducts.value.reduce((sum, p) => sum + p.price * p.quantity, 0)
+  return itemsPrice
+})
+
 async function submitNewTicket() {
-  if (!queueForm.customer.trim() || !queueForm.orderText.trim()) {
-    formError.value = '请填写顾客姓名和商品内容'
+  if (!queueForm.customer.trim()) {
+    formError.value = '请填写顾客姓名'
     return
   }
-
-  const parsedOrder = parseOrderText(queueForm.orderText)
+  if (selectedProducts.value.length === 0) {
+    formError.value = '请选择至少一个商品'
+    return
+  }
 
   try {
     const res = await takeNumber({
       customer: queueForm.customer.trim(),
-      order: parsedOrder.order,
-      quantity: parsedOrder.quantity,
+      items: selectedProducts.value.map(p => ({
+        product_id: p.product_id,
+        quantity: p.quantity,
+      })),
       note: queueForm.note.trim() || '无备注',
     })
     if (res.data.code === 409) {
@@ -164,6 +228,7 @@ async function handleAction(actionId) {
 }
 
 function isActionUnavailable(actionId) {
+  if (!activeStall.value) return true
   if (['complete', 'cancel'].includes(actionId)) {
     return !currentService.value
   }
@@ -193,6 +258,9 @@ function isActionUnavailable(actionId) {
     </header>
 
     <div class="page-card page-card--hero queue-overview">
+      <div v-if="!activeStall" class="queue-stall-warning">
+        当前未出摊，请先去出摊日志页面开始出摊
+      </div>
       <div class="queue-summary-grid">
         <div
           v-for="item in summaryItems"
@@ -240,8 +308,13 @@ function isActionUnavailable(actionId) {
             <strong class="queue-row__customer">{{ item.customer }}</strong>
             <p class="queue-row__line">
               <span>订单：</span>
-              <b>{{ item.order }}</b>
-              <em>{{ item.quantity }}</em>
+              <template v-if="item.items && item.items.length">
+                <b>{{ item.items.map(i => `${i.name||i.product_name}×${i.quantity}`).join('、') }}</b>
+              </template>
+              <template v-else>
+                <b>{{ item.order }}</b>
+                <em>{{ item.quantity }}</em>
+              </template>
             </p>
             <p class="queue-row__line queue-row__line--note">
               <span>备注：</span>
@@ -271,7 +344,7 @@ function isActionUnavailable(actionId) {
         <div class="queue-dialog__header">
           <div>
             <span>自动取号</span>
-            <strong>{{ nextNumber }}</strong>
+            <strong>{{ queueSummary.next_number }}</strong>
           </div>
           <button type="button" aria-label="关闭取号弹窗" @click="closeAddDialog">×</button>
         </div>
@@ -285,14 +358,49 @@ function isActionUnavailable(actionId) {
           >
         </label>
 
-        <label class="queue-field">
-          <span>商品内容</span>
-          <input
-            v-model="queueForm.orderText"
-            autocomplete="off"
-            placeholder="例如：手工钥匙扣 ×2"
-          >
-        </label>
+        <div class="queue-field">
+          <span>选择商品</span>
+          <button type="button" class="queue-product-picker__toggle" @click="showProductPicker = !showProductPicker">
+            {{ selectedProducts.length ? `已选 ${selectedProducts.length} 种商品（共 ${productTotal} 元）` : '点击选择商品' }}
+          </button>
+        </div>
+
+        <div v-if="selectedProducts.length" class="queue-selected-products">
+          <div v-for="sp in selectedProducts" :key="sp.product_id" class="queue-selected-product">
+            <span class="queue-selected-product__name">{{ sp.name }}</span>
+            <div class="queue-selected-product__controls">
+              <button type="button" @click="updateProductQuantity(sp.product_id, sp.quantity - 1)" :disabled="sp.quantity <= 1">−</button>
+              <span>{{ sp.quantity }}</span>
+              <button type="button" @click="updateProductQuantity(sp.product_id, sp.quantity + 1)">+</button>
+            </div>
+            <span class="queue-selected-product__price">{{ sp.price * sp.quantity }}元</span>
+            <button type="button" class="queue-selected-product__remove" @click="removeProduct(sp.product_id)">×</button>
+          </div>
+        </div>
+
+        <div v-if="showProductPicker" class="queue-product-picker">
+          <div class="queue-product-picker__header">
+            <span>选择商品（点击选中/取消）</span>
+            <button type="button" @click="showProductPicker = false">完成</button>
+          </div>
+          <div class="queue-product-picker__list">
+            <div
+              v-for="p in products"
+              :key="p.id"
+              :class="['queue-product-picker__item', { 'queue-product-picker__item--selected': isProductSelected(p.id) }]"
+              @click="toggleProduct(p)"
+            >
+              <span class="queue-product-picker__item-name">{{ p.name }}</span>
+              <span class="queue-product-picker__item-price">{{ p.price }}元</span>
+              <span v-if="isProductSelected(p.id)" class="queue-product-picker__item-qty">
+                {{ getProductQuantity(p.id) }}
+              </span>
+            </div>
+            <div v-if="!products.length" class="queue-product-picker__empty">
+              暂无商品，请先在商品管理中添加
+            </div>
+          </div>
+        </div>
 
         <label class="queue-field">
           <span>备注项</span>
@@ -327,6 +435,17 @@ function isActionUnavailable(actionId) {
 .queue-overview {
   padding: 14px;
   background: rgba(255, 255, 255, 0.95);
+}
+
+.queue-stall-warning {
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #fff3cd;
+  color: #856404;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .queue-summary-grid {
@@ -687,6 +806,174 @@ function isActionUnavailable(actionId) {
   box-shadow: 0 12px 24px rgba(45, 115, 219, 0.22);
   font-size: 0.86rem;
   font-weight: 900;
+}
+
+.queue-product-picker__toggle {
+  width: 100%;
+  padding: 12px 13px;
+  border: 1px solid rgba(126, 165, 220, 0.2);
+  border-radius: 14px;
+  outline: 0;
+  background: #f8fbff;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.queue-selected-products {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.queue-selected-product {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #f0f6ff;
+}
+
+.queue-selected-product__name {
+  flex: 1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.queue-selected-product__controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.queue-selected-product__controls button {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(126, 165, 220, 0.25);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--primary);
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.queue-selected-product__controls button:disabled {
+  opacity: 0.4;
+}
+
+.queue-selected-product__controls span {
+  min-width: 16px;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.queue-selected-product__price {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.queue-selected-product__remove {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.queue-product-picker {
+  margin-top: 8px;
+  border: 1px solid rgba(126, 165, 220, 0.15);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.queue-product-picker__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f0f6ff;
+}
+
+.queue-product-picker__header span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.queue-product-picker__header button {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.queue-product-picker__list {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.queue-product-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(126, 165, 220, 0.08);
+  transition: background 0.15s;
+}
+
+.queue-product-picker__item:hover {
+  background: #f8fbff;
+}
+
+.queue-product-picker__item--selected {
+  background: #e8f3ff;
+}
+
+.queue-product-picker__item-name {
+  flex: 1;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.queue-product-picker__item-price {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.queue-product-picker__item-qty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.queue-product-picker__empty {
+  padding: 20px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.76rem;
 }
 
 @media (max-width: 420px) {

@@ -6,6 +6,7 @@ from app.schemas.stall_log import (
     StallLogCreate, StallLogUpdate, StallLogResponse,
     WeeklySummary, WeatherCreate, WeatherResponse,
     StallAdviceRequest, StallAdviceResponse,
+    StartStallRequest, EndStallRequest,
 )
 from app.schemas.common import ApiResponse
 router = APIRouter(tags=["出摊日志"])
@@ -18,6 +19,28 @@ def list_stall_logs(db: Session = Depends(get_db)):
 @router.post("/stall-logs", response_model=ApiResponse)
 def create_stall_log(data: StallLogCreate, db: Session = Depends(get_db)):
     log = stall_service.create_stall_log(db, data)
+    return ApiResponse(data=StallLogResponse.model_validate(log))
+
+@router.post("/stall-logs/start", response_model=ApiResponse)
+def start_stall(data: StartStallRequest, db: Session = Depends(get_db)):
+    log = stall_service.start_stall(db, data.location)
+    if not log:
+        return ApiResponse(code=409, message="已有出摊在进行中，请先结束当前出摊")
+    return ApiResponse(data=StallLogResponse.model_validate(log))
+
+@router.put("/stall-logs/{log_id}/end", response_model=ApiResponse)
+def end_stall(log_id: int, data: EndStallRequest = None, db: Session = Depends(get_db)):
+    note = data.note if data else ""
+    log = stall_service.end_stall(db, log_id, note)
+    if not log:
+        return ApiResponse(code=404, message="出摊记录不存在或已结束")
+    return ApiResponse(data=StallLogResponse.model_validate(log))
+
+@router.get("/stall-logs/active", response_model=ApiResponse)
+def active_stall(db: Session = Depends(get_db)):
+    log = stall_service.get_active_stall(db)
+    if not log:
+        return ApiResponse(data=None)
     return ApiResponse(data=StallLogResponse.model_validate(log))
 
 @router.put("/stall-logs/{log_id}", response_model=ApiResponse)

@@ -58,6 +58,18 @@ export function getWeeklySummary() {
   return api.get('/stall-logs/weekly-summary')
 }
 
+export function startStall(data) {
+  return api.post('/stall-logs/start', data)
+}
+
+export function endStall(logId, data) {
+  return api.put(`/stall-logs/${logId}/end`, data)
+}
+
+export function getActiveStall() {
+  return api.get('/stall-logs/active')
+}
+
 // ===== 天气 =====
 
 export function setWeather(data) {
@@ -124,10 +136,6 @@ export function updateProduct(productId, data) {
 
 export function deleteProduct(productId) {
   return api.delete(`/products/${productId}`)
-}
-
-export function sellProduct(productId, quantity) {
-  return api.post(`/products/${productId}/sell`, { quantity })
 }
 
 // ===== 排队 =====

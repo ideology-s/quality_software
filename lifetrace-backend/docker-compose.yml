@@ -28,6 +28,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     env_file:
       - .env
+    volumes:
+      - ./app:/app/app
 
 volumes:
   mysql_data:

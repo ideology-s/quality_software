@@ -8,16 +8,23 @@ import {
   Wallet,
 } from '@element-plus/icons-vue'
 import { usePageNotice } from '../composables/usePageNotice'
-import { getStallLogs, createStallLog, updateStallLog, deleteStallLog, getWeeklySummary } from '../api'
+import { getStallLogs, createStallLog, updateStallLog, deleteStallLog, getWeeklySummary, startStall, endStall, getActiveStall } from '../api'
 
 const isDialogOpen = ref(false)
 const editingLogId = ref(null)
 const formError = ref('')
 const selectedLogDate = ref('all')
 const loading = ref(false)
+const activeStallLocation = ref('')
+const stallEndNote = ref('')
+const showEndDialog = ref(false)
 const { notice, showNotice } = usePageNotice()
 
 const logs = ref([])
+
+const activeStall = ref(null)
+const stallDuration = ref(0)
+let stallTimer = null
 
 const weekSummary = ref({
   count: 0,
@@ -62,9 +69,86 @@ async function fetchWeekSummary() {
   }
 }
 
+async function fetchActiveStall() {
+  try {
+    const res = await getActiveStall()
+    activeStall.value = res.data.data
+    if (activeStall.value) {
+      startStallTimer(activeStall.value.start_time)
+    }
+  } catch (e) {
+    activeStall.value = null
+  }
+}
+
+function startStallTimer(startTime) {
+  if (!startTime) return
+  const now = new Date()
+  const parts = startTime.split(':')
+  const h = parseInt(parts[0], 10)
+  const m = parseInt(parts[1], 10)
+  const start = new Date(now)
+  start.setHours(h, m, 0, 0)
+  const diff = Math.floor((now - start) / 60000)
+  stallDuration.value = Math.max(0, diff)
+  clearInterval(stallTimer)
+  stallTimer = setInterval(() => {
+    stallDuration.value++
+  }, 60000)
+}
+
+function formatDuration(minutes) {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h > 0) return `${h}小时${m}分钟`
+  return `${m}分钟`
+}
+
+async function handleStartStall() {
+  try {
+    const res = await startStall({ location: activeStallLocation.value || '默认摊位' })
+    if (res.data.code === 409) {
+      showNotice(res.data.message, 'warning')
+      return
+    }
+    activeStall.value = res.data.data
+    startStallTimer(activeStall.value.start_time)
+    activeStallLocation.value = ''
+    showNotice('出摊开始')
+    await fetchLogs()
+    await fetchWeekSummary()
+  } catch (e) {
+    const msg = e.response?.data?.message || '开始出摊失败'
+    showNotice(msg, 'warning')
+  }
+}
+
+async function handleEndStall() {
+  if (!activeStall.value) return
+  const stallId = activeStall.value.id
+  const note = stallEndNote.value || ''
+
+  try {
+    await endStall(stallId, { note })
+    activeStall.value = null
+    stallDuration.value = 0
+    showEndDialog.value = false
+    stallEndNote.value = ''
+    clearInterval(stallTimer)
+    showNotice('出摊结束，记录已保存')
+    await fetchLogs()
+    await fetchWeekSummary()
+  } catch (e) {
+    showNotice('结束出摊失败', 'warning')
+  }
+}
+
+
+
 onMounted(() => {
   fetchLogs()
   fetchWeekSummary()
+  fetchActiveStall()
 })
 
 const logForm = reactive({
@@ -251,6 +335,48 @@ async function removeLog() {
           </div>
         </div>
       </div>
+    </section>
+
+    <section class="page-card stall-control-card">
+      <template v-if="activeStall">
+        <div class="stall-active">
+          <div class="stall-active__info">
+            <span class="stall-active__badge">营业中</span>
+            <span class="stall-active__location">{{ activeStall.location }}</span>
+            <span class="stall-active__time">已出摊 {{ formatDuration(stallDuration) }}</span>
+          </div>
+          <button class="stall-control-button stall-control-button--end" type="button" @click="showEndDialog = true">
+            结束出摊
+          </button>
+        </div>
+        <div v-if="showEndDialog" class="stall-end-dialog" @click.self="showEndDialog = false">
+          <div class="stall-end-dialog__card">
+            <h3>结束出摊</h3>
+            <label class="stall-end-dialog__field">
+              <span>备注（可选）</span>
+              <input v-model="stallEndNote" placeholder="记录今日情况…" />
+            </label>
+            <div class="stall-end-dialog__actions">
+              <button class="stall-control-button stall-control-button--ghost" @click="showEndDialog = false">取消</button>
+              <button class="stall-control-button stall-control-button--end" @click="handleEndStall">确认结束</button>
+            </div>
+          </div>
+        </div>
+      </template>
+      <template v-else>
+        <div class="stall-inactive">
+          <div class="stall-inactive__info">
+            <span class="stall-inactive__badge">未出摊</span>
+            <p>准备开始出摊了吗？点击下方按钮开始记录。</p>
+          </div>
+          <div class="stall-start-form">
+            <input v-model="activeStallLocation" class="stall-start-input" placeholder="摊位地点（如：下沙夜市）" />
+            <button class="stall-control-button stall-control-button--start" type="button" @click="handleStartStall">
+              开始出摊
+            </button>
+          </div>
+        </div>
+      </template>
     </section>
 
     <section class="log-section">
@@ -678,6 +804,159 @@ async function removeLog() {
   margin-right: 8px;
   background: #f1f5f9;
   color: #64748b;
+}
+
+.stall-control-card {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.stall-active {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stall-active__info {
+  display: grid;
+  gap: 4px;
+}
+
+.stall-active__badge {
+  display: inline-flex;
+  align-self: start;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #16a34a;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.stall-active__location {
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.stall-active__time {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.stall-inactive {
+  display: grid;
+  gap: 10px;
+}
+
+.stall-inactive__badge {
+  display: inline-flex;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.stall-inactive__info p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.stall-start-form {
+  display: flex;
+  gap: 8px;
+}
+
+.stall-start-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid rgba(126, 165, 220, 0.2);
+  border-radius: 12px;
+  outline: 0;
+  background: #f8fbff;
+  color: var(--text-main);
+  font-size: 0.8rem;
+}
+
+.stall-control-button {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.stall-control-button--start {
+  background: linear-gradient(135deg, #6fbaff 0%, #2d73db 100%);
+  color: #fff;
+}
+
+.stall-control-button--end {
+  background: #ef4444;
+  color: #fff;
+}
+
+.stall-control-button--ghost {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.stall-end-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(17, 37, 61, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.stall-end-dialog__card {
+  width: min(300px, 100%);
+  padding: 20px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(18, 30, 52, 0.22);
+}
+
+.stall-end-dialog__card h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.stall-end-dialog__field {
+  display: grid;
+  gap: 6px;
+}
+
+.stall-end-dialog__field span {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.stall-end-dialog__field input {
+  padding: 10px 12px;
+  border: 1px solid rgba(126, 165, 220, 0.2);
+  border-radius: 12px;
+  outline: 0;
+  background: #f8fbff;
+  font-size: 0.8rem;
+}
+
+.stall-end-dialog__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 @media (max-width: 420px) {

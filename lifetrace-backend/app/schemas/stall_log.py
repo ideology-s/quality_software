@@ -1,15 +1,13 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, List
 from datetime import date, time
 
 class StallLogCreate(BaseModel):
     date: date
     start_time: time
-    end_time: time
     location: str
-    income: float
-    profit: float
     note: Optional[str] = ""
+    status: str = "进行中"
 
 class StallLogUpdate(BaseModel):
     date: Optional[date] = None
@@ -19,17 +17,19 @@ class StallLogUpdate(BaseModel):
     income: Optional[float] = None
     profit: Optional[float] = None
     note: Optional[str] = None
+    status: Optional[str] = None
 
 class StallLogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     date: date
     start_time: time
-    end_time: time
+    end_time: Optional[time] = None
     location: str
     income: float
     profit: float
     note: str
+    status: str = "进行中"
 
 class WeeklySummary(BaseModel):
     count: int
@@ -66,3 +66,9 @@ class StallAdviceResponse(BaseModel):
     overall_advice: str
     details: list
     is_recommended: bool
+
+class StartStallRequest(BaseModel):
+    location: str
+
+class EndStallRequest(BaseModel):
+    note: Optional[str] = ""

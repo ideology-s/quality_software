@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, Integer, Float, String, Text, JSON
 from app.models import Base
 
 class QueueOrder(Base):
@@ -11,3 +11,7 @@ class QueueOrder(Base):
     quantity = Column(String(10), nullable=False, default="×1")
     note = Column(Text, default="无备注")
     status = Column(String(20), nullable=False, default="等待中")
+    items = Column(JSON, default=[])
+    total_price = Column(Float, default=0)
+    total_cost = Column(Float, default=0)
+    stall_log_id = Column(Integer, nullable=True)
